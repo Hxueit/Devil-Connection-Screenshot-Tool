@@ -1,7 +1,8 @@
 # Devil Connection Screenshot Tool
 
 一个极简用于管理和编辑 でびるコネクショん 游戏截图保存文件的工具。
-[Steam商店页面](https://store.steampowered.com/app/3054820/)，请支持原作者。
+
+Steam商店页面[链接](https://store.steampowered.com/app/3054820/)，请支持原作者。
 
 使用tkinter/[Sun Valley theme](https://github.com/rdbende/Sun-Valley-ttk-theme)构建GUI。
 
@@ -23,6 +24,8 @@
 
 ### 安装步骤
 
+- 注意：你也可以前往Releases页面下载单exe文件，该方式无需安装Python或任何依赖
+
 1. 克隆或下载此仓库
 
 2. 安装依赖：
@@ -32,8 +35,6 @@ pip install -r requirements.txt
 ```
 
 ## 使用方法
-
-- 注意：你也可以前往Releases页面下载单exe文件，该方式无需安装Python或任何依赖
 
 1. 运行程序：
 
@@ -74,9 +75,10 @@ MIT License
 
 ## 贡献
 
-- 本项目为一个编程新手利用闲暇时间写出的产物，经个人测试未发现使用问题，但难免会有疏漏。非常欢迎提交issue或者pull request。
+- 本项目是一个编程新手利用闲暇时间写出的，经个人测试未发现使用问题，但难免会有疏漏。非常欢迎提交issue或者pull request。
 
-- 理论上该项目应该可以支持所有使用Tyrano构建且以.sav文件保存截图的游戏，但目前是 でびるコネクショん 特化。
+- 理论上该项目经过一些小改动应该就可以支持所有使用Tyrano构建且以.sav文件保存截图的游戏，但目前为了方便使用是 でびるコネクショん 特化。
+
 
 
 

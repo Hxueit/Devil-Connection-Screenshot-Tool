@@ -13,7 +13,7 @@ from datetime import datetime
 import tempfile
 import zipfile
 import shutil
-import sv_ttk
+import customtkinter as ctk
 import locale
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -62,10 +62,19 @@ class SavTool:
         # 设置窗口图标
         set_window_icon(self.root)
         
-        # 应用 sun valley 亮色主题
-        sv_ttk.set_theme("light")
+        # 应用 CustomTkinter 主题
+        ctk.set_appearance_mode("light")
+        ctk.set_default_color_theme("blue")
 
         style = ttk.Style()
+        # 配置 Label 背景为白色，去除灰色背景
+        style.configure("TLabel", background="white")
+        style.map("TLabel", background=[("active", "white")])
+        style.configure("TCheckbutton", background="white")
+        style.map("TCheckbutton", background=[("active", "white")])
+        style.configure("TButton", background="white")
+        style.map("TButton", background=[("active", "white")])
+        
         style.configure("TNotebook", 
                        borderwidth=0, 
                        background="#fafafa")

@@ -119,6 +119,7 @@ TRANSLATIONS = {
         "save_analyzer_tab": "存档分析",
         "screenshot_management_tab": "截图管理",
         "save_file_not_found": "未找到 DevilConnection_sf.sav 文件！",
+        "no_save_data": "暂无存档数据",
         "basic_info": "基本信息",
         "save_list_no": "当前所在的存档页面",
         "album_page_no": "当前所在的相册页码",
@@ -171,7 +172,7 @@ TRANSLATIONS = {
         "hade": "哈德斯塔对话标记",
         "fullscreen": "是否全屏",
         "other_info": "其他信息",
-        "other_info_hint": "以上是存档信息中提炼出来的一些变量，若想查看/编辑完整存档信息请点击下面的按钮      ",
+        "other_info_hint": "以上是存档信息中提炼出来的一些变量，若想查看/编辑完整存档信息请点击右侧的按钮      ",
         "gallery_count": "画廊数量",
         "ng_scene_count": "NG场景数",
         "lamia_curse": "是否遭受拉米亚的诅咒",
@@ -203,6 +204,8 @@ TRANSLATIONS = {
         "cannot_edit_collapsed_detail": "当前变量已折叠，无法编辑。\n\n要编辑此变量，请先勾选上方的\"取消折叠/横置\"复选框。",
         "refresh_confirm_title": "确认操作",
         "unsaved_changes_warning": "当前有未保存的修改，进行该操作会让修改丢失。\n\n是否继续操作？",
+        "good_neo": "愿你们永远幸福",
+        "bad_neo": "对你施以永恒的制裁",
 
         #Unlock Conditions
         #Endings
@@ -225,7 +228,7 @@ TRANSLATIONS = {
         "END17_unlock_cond": "2日目，与康妮交涉选“帮忙”",
         "END18_unlock_cond": "2日目，与阿伦交涉，选择2“抚摸魔法→非头触摸”+选择3“透过魔法”",
         "END19_unlock_cond": "与明蒂交涉，选择2/3至少1错",
-        "END20_unlock_cond": "与学交涉，选择1/4错",
+        "END20_unlock_cond": "与学（机器人）交涉，选择1/4错",
         "END21_unlock_cond": "3日目，与姆姆姆最后选择时额外邪眼搜索2次",
         "END22_unlock_cond": "3日目，与鲁比交涉任意1错",
         "END23_unlock_cond": "3日目，与阿莫阿莫交涉，选择2选择“伸出手”",
@@ -370,6 +373,7 @@ TRANSLATIONS = {
         "save_analyzer_tab": "Save Analyzer",
         "screenshot_management_tab": "Screenshot Management",
         "save_file_not_found": "DevilConnection_sf.sav file not found!",
+        "no_save_data": "No save data available",
         "basic_info": "Basic Information",
         "save_list_no": "Current Save Page Number",
         "album_page_no": "Current Album Page Number",
@@ -422,7 +426,7 @@ TRANSLATIONS = {
         "hade": "Hardester Dialogue Marker",
         "fullscreen": "Fullscreen",
         "other_info": "Other Information",
-        "other_info_hint": "The above are some variables extracted from the save file. To view/edit the complete save file information, please click the button below",
+        "other_info_hint": "The above are some variables extracted from the save file. To view/edit the complete save file information, please click the button on the right",
         "gallery_count": "Gallery Count",
         "ng_scene_count": "NG Scene Count",
         "lamia_curse": "Cursed by Lamia?",
@@ -454,6 +458,8 @@ TRANSLATIONS = {
         "cannot_edit_collapsed_detail": "This variable is collapsed and cannot be edited.\n\nTo edit this variable, please check the 'Disable Collapse/Horizontal' checkbox above first.",
         "refresh_confirm_title": "Confirm Action",
         "unsaved_changes_warning": "You have unsaved changes. This action will cause the changes to be lost.\n\nContinue with this action?",
+        "good_neo": "May you always be happy",
+        "bad_neo": "May you always be cursed",
 
         #Unlock Conditions
         #Endings
@@ -621,6 +627,7 @@ TRANSLATIONS = {
         "save_analyzer_tab": "セーブ解析",
         "screenshot_management_tab": "アルバム画像管理",
         "save_file_not_found": "DevilConnection_sf.savが見つかりません！",
+        "no_save_data": "セーブデータがありません",
         "basic_info": "基本情報",
 		"save_list_no": "現在のセーブページ番号",
 		"album_page_no": "現在のアルバムページ番号",
@@ -673,7 +680,7 @@ TRANSLATIONS = {
 		"hade": "ハーデスター会話マーカー",
 		"fullscreen": "フルスクリーン",
 		"other_info": "その他の情報",
-		"other_info_hint": "以上はセーブファイル情報から抽出したいくつかの変数です。完全なセーブファイル情報を表示/編集するには、下のボタンをクリックしてください",
+		"other_info_hint": "以上はセーブファイル情報から抽出したいくつかの変数です。完全なセーブファイル情報を表示/編集するには、右のボタンをクリックしてください",
         "gallery_count": "ギャラリー数",
         "ng_scene_count": "NGシーン数",
 		"lamia_curse": "ラミアの呪いを受けていますか？",
@@ -705,7 +712,8 @@ TRANSLATIONS = {
 		"cannot_edit_collapsed_detail": "この変数は折りたたまれており、編集できません。\n\nこの変数を編集するには、まず上記の「折りたたみ/横置きを解除」チェックボックスにチェックを入れてください。",
 		"refresh_confirm_title": "操作を確認",
 		"unsaved_changes_warning": "保存されていない変更があります。この操作により、変更が失われます。\n\nこの操作を続行しますか？",
-
+        "good_neo": "キミたちに永遠の祝福を",
+        "bad_neo": "オマ工に永遠の制裁を",
         #Unlock Conditions
         #Endings
         "END1_unlock_cond": "0日目、でびるん召喚画面の選択肢で「契約しない」を選択",

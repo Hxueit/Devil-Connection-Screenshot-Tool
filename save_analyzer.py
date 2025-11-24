@@ -1,16 +1,16 @@
 import tkinter as tk
-from tkinter import ttk, Scrollbar
+from tkinter import ttk, Scrollbar, font as tkfont
 import json
 import urllib.parse
 import os
 import platform
+import math
 from translations import TRANSLATIONS
-from utils import set_window_icon, SUMMONER_PIC_BASE64
+from utils import set_window_icon
 import re
-import base64
-import io
-from PIL import Image, ImageTk, ImageEnhance
+import customtkinter as ctk
 import random
+import string
 
 def get_cjk_font(size=10, weight="normal"):
     """
@@ -36,6 +36,13 @@ class SaveAnalyzer:
         self.current_language = current_language
         
         self.window = parent
+        
+        # 配置 ttk.Style，去除 Label 的灰色背景
+        style = ttk.Style()
+        style.configure("TLabel", background="white")
+        style.map("TLabel", background=[("active", "white")])
+        style.configure("TCheckbutton", background="white")
+        style.map("TCheckbutton", background=[("active", "white")])
         
         # 性能优化：缓存宽度值，使用防抖机制避免频繁更新
         # 获取窗口宽度并计算2/3作为方框宽度
@@ -211,6 +218,8 @@ class SaveAnalyzer:
         self.save_data = self.load_save_file()
         if self.save_data:
             self.window.after(10, lambda: self.display_save_info(scrollable_frame, self.save_data))
+            # 更新统计面板（使用存储的容器引用）
+            self.window.after(10, lambda: self.update_statistics_panel(self._stats_container, self.save_data) if hasattr(self, '_stats_container') else None)
         else:
             error_label = ttk.Label(scrollable_frame, text=self.t("save_file_not_found"), 
                                    font=get_cjk_font(12), foreground="red")
@@ -227,7 +236,7 @@ class SaveAnalyzer:
         # 延迟执行以确保窗口已完全渲染
         self.window.after(100, update_canvas_width)
         
-        # 右侧1/3区域：显示图片（不可滚动）
+        # 右侧1/3区域：显示统计面板（不可滚动）
         right_frame = tk.Frame(main_paned, bg="white")
         main_paned.add(right_frame, width=400, minsize=200)
         self._right_frame = right_frame
@@ -260,12 +269,15 @@ class SaveAnalyzer:
         main_paned.bind("<Configure>", set_paned_ratio)
         set_paned_ratio()
         
-        # 创建Canvas用于显示图片
-        image_canvas = tk.Canvas(right_frame, bg="white", highlightthickness=0)
-        image_canvas.pack(fill="both", expand=True)
+        # 创建统计面板（先创建，稍后更新数据）
+        self.create_statistics_panel(right_frame)
         
-        # 加载并显示base64图片
-        self.load_and_display_image(image_canvas, right_frame)
+        # 创建查看存档文件按钮（放在右侧面板底部）
+        button_frame = tk.Frame(right_frame, bg="white")
+        button_frame.pack(side="bottom", fill="x", pady=(0, 10))
+        self.view_file_button = ttk.Button(button_frame, text=self.t("view_save_file"), 
+                                           command=self.show_save_file_viewer)
+        self.view_file_button.pack(pady=5)
         
         # 创建滚动条，放在主容器最右侧
         scrollbar = Scrollbar(main_container, orient="vertical", command=canvas.yview)
@@ -337,9 +349,9 @@ class SaveAnalyzer:
         if self.save_data:
             # 重新显示存档信息
             self.display_save_info(self.scrollable_frame, self.save_data)
-            # 重新加载并显示图片
-            if hasattr(self, '_image_canvas') and self._image_canvas and hasattr(self, '_right_frame') and self._right_frame:
-                self.load_and_display_image(self._image_canvas, self._right_frame)
+            # 更新统计面板（使用存储的容器引用）
+            if hasattr(self, '_stats_container') and self._stats_container:
+                self.update_statistics_panel(self._stats_container, self.save_data)
         else:
             # 显示错误信息
             error_label = ttk.Label(self.scrollable_frame, text=self.t("save_file_not_found"), 
@@ -368,318 +380,523 @@ class SaveAnalyzer:
         except Exception as e:
             return None
     
-    def apply_red_filter(self, img):
-        """将黑色线条转换为红色，保持白色/透明背景不变"""
-        # 转换为RGB模式（如果不是的话）
-        if img.mode != 'RGB':
-            img = img.convert('RGB')
+    def create_statistics_panel(self, parent):
+        """创建统计面板（贴纸环形图、MP大字、判定小字）"""
+        # 使用 CustomTkinter 创建主容器
+        stats_container = ctk.CTkFrame(parent, fg_color="white")
+        stats_container.pack(fill="both", expand=True, padx=10, pady=10)
         
-        # 使用逐像素操作来应用红色滤镜
-        pixels = img.load()
-        width, height = img.size
+        # 存储容器引用以便更新
+        self._stats_container = stats_container
         
-        for y in range(height):
-            for x in range(width):
-                r, g, b = pixels[x, y]
-                
-                # 判断是否为黑色或接近黑色的像素（线条）
-                # 如果RGB值都比较低，认为是黑色线条
-                # 阈值设为180，扩大检测范围以捕获更多灰色线条
-                max_component = max(r, g, b)
-                
-                if max_component < 180:
-                    # 黑色线条：转换为红色
-                    # 保持原有的明暗程度，但改为红色调
-                    # 使用原始亮度来确定红色的深浅
-                    brightness = (r + g + b) / 3
-                    # 将黑色映射到红色，保持明暗对比
-                    # 纯黑色(0) -> 深红色(50)，较黑的灰色 -> 较亮的红色
-                    red_intensity = int(50 + (255 - brightness) * 0.8)
-                    red_intensity = min(255, max(50, red_intensity))  # 限制在50-255范围
-                    pixels[x, y] = (red_intensity, 0, 0)
-                # 如果像素较亮（白色背景或浅色），保持不变
+        # 存储乱码更新定时器的ID（用于取消定时器）
+        self._gibberish_update_job = None
+        # 存储原始文本内容（用于乱码效果）
+        self._original_texts = {}
+        # 存储需要显示乱码的widget引用
+        self._gibberish_widgets = []
         
-        return img
+        # 显示占位文本（稍后会被 update_statistics_panel 替换）
+        placeholder = ctk.CTkLabel(
+            stats_container,
+            text=self.t("no_save_data"),
+            font=get_cjk_font(12)
+        )
+        placeholder.pack(pady=50)
     
-    def load_and_display_image(self, canvas, parent):
-        """从utils模块加载base64图片并显示"""
-        try:
-            # 直接从导入的变量获取 base64 数据
-            base64_data = SUMMONER_PIC_BASE64
-            
-            if not base64_data:
-                canvas.config(bg="white")
-                return
-            
-            # 清理base64字符串：只保留有效的base64字符
-            import string
-            valid_chars = string.ascii_letters + string.digits + '+/='
-            base64_clean = ''.join(c for c in base64_data if c in valid_chars)
-            
-            # 移除所有=，然后重新添加正确的填充
-            data_only = ''.join(c for c in base64_clean if c != '=')
-            
-            # 计算需要添加的填充（使长度成为4的倍数）
-            remainder = len(data_only) % 4
-            if remainder:
-                data_only += '=' * (4 - remainder)
-            
-            # 解码base64图片
+    def update_statistics_panel(self, parent, save_data):
+        """更新统计面板内容"""
+        # 取消之前的乱码更新定时器（如果存在）
+        if hasattr(self, '_gibberish_update_job') and self._gibberish_update_job is not None:
             try:
-                image_data = base64.b64decode(data_only)
-                image = Image.open(io.BytesIO(image_data))
-            except Exception as e:
-                canvas.config(bg="white")
-                return
+                self.window.after_cancel(self._gibberish_update_job)
+            except:
+                pass
+            self._gibberish_update_job = None
+        
+        # 初始化乱码相关变量（如果不存在）
+        if not hasattr(self, '_gibberish_widgets'):
+            self._gibberish_widgets = []
+        if not hasattr(self, '_original_texts'):
+            self._original_texts = {}
+        
+        # 清除旧内容
+        for widget in parent.winfo_children():
+            widget.destroy()
+        
+        # 检查狂信徒线条件
+        kill = save_data.get("kill", None)
+        killed = save_data.get("killed", None)
+        kill_start = save_data.get("killStart", 0)
+        
+        is_zealot_route = (
+            (kill is not None and kill == 1) or
+            (killed is not None and killed == 1) or
+            (kill_start is not None and kill_start > 0)
+        )
+        
+        # 计算统计数据
+        stickers = set(save_data.get("sticker", []))
+        total_stickers = 132
+        collected_stickers = len(stickers)
+        stickers_percent = (collected_stickers / total_stickers * 100) if total_stickers > 0 else 0
+        
+        whole_total_mp = save_data.get("wholeTotalMP", 0)
+        judge_counts = save_data.get("judgeCounts", {})
+        perfect = judge_counts.get("perfect", 0)
+        good = judge_counts.get("good", 0)
+        bad = judge_counts.get("bad", 0)
+        
+        # 1. 贴纸统计环形图（使用 Canvas 绘制，改善抗锯齿）
+        sticker_frame = ctk.CTkFrame(parent, fg_color="transparent")
+        sticker_frame.pack(pady=(0, 20))
+        
+        # 创建 Canvas 用于绘制环形图
+        canvas_size = 180
+        sticker_canvas = tk.Canvas(
+            sticker_frame,
+            width=canvas_size,
+            height=canvas_size,
+            bg="white",
+            highlightthickness=0
+        )
+        sticker_canvas.pack()
+        
+        # 绘制环形进度图
+        center_x, center_y = canvas_size // 2, canvas_size // 2
+        radius = 70
+        line_width = 20  # 增加线宽，改善抗锯齿
+        
+        # 背景圆环（灰色，多层绘制改善抗锯齿）
+        for offset, width in [(0, line_width + 2), (0.5, line_width + 1), (1, line_width)]:
+            sticker_canvas.create_oval(
+                center_x - radius - offset, center_y - radius - offset,
+                center_x + radius + offset, center_y + radius + offset,
+                outline="#e0e0e0",
+                width=int(width)
+            )
+        
+        # 进度圆环（根据完成度设置颜色，使用更明显的对比）
+        # 如果满足狂信徒线条件，强制使用#BF0204颜色
+        if is_zealot_route:
+            progress_color = "#BF0204"  # 狂信徒线专用颜色
+        elif stickers_percent == 100:
+            progress_color = "#2E7D32"  # 深绿色，更明显
+        elif stickers_percent >= 90:
+            progress_color = "#4CAF50"  # 标准绿色
+        elif stickers_percent >= 75:
+            progress_color = "#FF9800"  # 橙色
+        elif stickers_percent >= 50:
+            progress_color = "#FFC107"  # 黄色
+        else:
+            progress_color = "#F44336"  # 红色
+        
+        # 计算进度（四舍五入到1%精度）
+        rounded_percent = round(stickers_percent)
+        if rounded_percent >= 100:
+            num_segments = 99  # 99个1%段，留出1%的空隙（约3.6度）
+        else:
+            num_segments = rounded_percent  # 每1%一段
+        
+        # 绘制进度（用多条直线段绘制，避免圆形笔触端点）
+        if num_segments > 0:
+            # 每1%对应的角度
+            angle_per_segment = 360 / 100  # 3.6度
             
-            # 检查是否需要应用红色滤镜和闪烁效果
-            should_apply_effect = False
-            if self.save_data:
-                killed = self.save_data.get("killed", 0)
-                kill = self.save_data.get("kill", 0)
-                kill_start = self.save_data.get("killStart", 0)
-                if killed == 1 or kill > 0 or kill_start > 0:
-                    should_apply_effect = True
-            
-            # 存储图片引用，避免被垃圾回收
-            self.image_ref = image
-            self.should_apply_effect = should_apply_effect
-            self._image_canvas = canvas
-            self._image_base_x = None
-            self._image_base_y = None
-            self._flash_animation_id = None
-            self._processed_image = None  # 存储处理后的图片（红色滤镜）
-            
-            # 性能优化：使用防抖机制和更快的重采样方法
-            self._image_update_pending = False
-            self._last_image_size = None
-            
-            def update_image_size(event=None):
-                """更新图片大小以适应canvas（防抖优化）"""
-                if self._image_update_pending:
-                    return
-                self._image_update_pending = True
+            # 多层绘制改善抗锯齿
+            for offset, width in [(0, line_width), (0.5, line_width - 1), (1, max(1, line_width - 2))]:
+                offset_radius = radius + offset
                 
-                # 取消正在运行的闪烁动画，避免冲突
-                if self._flash_animation_id:
+                # 绘制每一段（每1%一段）
+                for i in range(num_segments):
+                    # 计算当前段的起始角度（从顶部90度开始，顺时针）
+                    start_angle = 90 - (i * angle_per_segment)
+                    end_angle = 90 - ((i + 1) * angle_per_segment)
+                    
+                    # 转换为弧度
+                    start_angle_rad = math.radians(start_angle)
+                    end_angle_rad = math.radians(end_angle)
+                    
+                    # 计算起点和终点坐标
+                    start_x = center_x + offset_radius * math.cos(start_angle_rad)
+                    start_y = center_y - offset_radius * math.sin(start_angle_rad)
+                    end_x = center_x + offset_radius * math.cos(end_angle_rad)
+                    end_y = center_y - offset_radius * math.sin(end_angle_rad)
+                    
+                    # 绘制直线段
+                    sticker_canvas.create_line(
+                        start_x, start_y,
+                        end_x, end_y,
+                        fill=progress_color,
+                        width=int(width),
+                        capstyle=tk.ROUND
+                    )
+        
+        # 中心文字：标题（贴纸统计）
+        sticker_canvas.create_text(
+            center_x, center_y - 20,
+            text=self.t('stickers_statistics'),
+            font=get_cjk_font(12, "bold"),
+            fill="#333333"
+        )
+        
+        # 中心文字：百分比
+        sticker_canvas.create_text(
+            center_x, center_y + 2,
+            text=f"{stickers_percent:.1f}%",
+            font=get_cjk_font(20, "bold"),
+            fill="#333333"
+        )
+        
+        # 中心文字：数量（X/132）
+        sticker_canvas.create_text(
+            center_x, center_y + 22,
+            text=f"{collected_stickers}/{total_stickers}",
+            font=get_cjk_font(11),
+            fill="#666666"
+        )
+        
+        # 2. 总MP收集量（大字显示）
+        mp_frame = ctk.CTkFrame(parent, fg_color="transparent")
+        mp_frame.pack(pady=(0, 15))
+        
+        mp_label_title = ctk.CTkLabel(
+            mp_frame,
+            text=self.t("total_mp"),
+            font=get_cjk_font(12),
+            text_color="#666666"
+        )
+        mp_label_title.pack()
+        
+        mp_label_value = ctk.CTkLabel(
+            mp_frame,
+            text=f"{whole_total_mp:,}",
+            font=get_cjk_font(32, "bold"),
+            text_color="#2196F3"
+        )
+        mp_label_value.pack()
+        
+        # 3. 判定统计（一行显示）
+        judge_frame = ctk.CTkFrame(parent, fg_color="transparent")
+        judge_frame.pack(pady=(10, 0))
+        
+        # 创建一行文本，包含三个判定（使用不同颜色）
+        judge_canvas = tk.Canvas(
+            judge_frame,
+            height=25,
+            bg="white",
+            highlightthickness=0
+        )
+        judge_canvas.pack()
+        
+        # 构建完整文本
+        perfect_text = f"{perfect:,}"
+        good_text = f"{good:,}"
+        bad_text = f"{bad:,}"
+        full_text = f"{perfect_text} - {good_text} - {bad_text}"
+        
+        # 计算文本宽度以便居中
+        temp_font = get_cjk_font(10)
+        if isinstance(temp_font, tuple):
+            font_obj = tkfont.Font(family=temp_font[0], size=temp_font[1])
+        else:
+            font_obj = tkfont.Font(font=temp_font)
+        
+        text_width = font_obj.measure(full_text)
+        canvas_width = max(250, text_width + 20)  # 至少250宽度
+        judge_canvas.config(width=canvas_width)
+        
+        # 居中绘制文本（分别绘制不同颜色的部分）
+        center_x = canvas_width // 2
+        current_x = center_x - text_width // 2
+        
+        # Perfect（#CC6DAE）
+        perfect_width = font_obj.measure(perfect_text)
+        judge_canvas.create_text(
+            current_x + perfect_width // 2, 12,
+            text=perfect_text,
+            font=get_cjk_font(10),
+            fill="#CC6DAE",
+            anchor="center"
+        )
+        current_x += perfect_width + font_obj.measure(" - ")
+        
+        # Good（#F5CE88）
+        good_width = font_obj.measure(good_text)
+        judge_canvas.create_text(
+            current_x + good_width // 2, 12,
+            text=good_text,
+            font=get_cjk_font(10),
+            fill="#F5CE88",
+            anchor="center"
+        )
+        current_x += good_width + font_obj.measure(" - ")
+        
+        # Bad（#6DB7AB）
+        bad_width = font_obj.measure(bad_text)
+        judge_canvas.create_text(
+            current_x + bad_width // 2, 12,
+            text=bad_text,
+            font=get_cjk_font(10),
+            fill="#6DB7AB",
+            anchor="center"
+        )
+        
+        # 绘制分隔符
+        sep_width = font_obj.measure(" - ")
+        sep1_x = center_x - text_width // 2 + perfect_width
+        sep2_x = sep1_x + sep_width + good_width
+        judge_canvas.create_text(sep1_x + sep_width // 2, 12, text=" - ", font=get_cjk_font(10), fill="#666666", anchor="center")
+        judge_canvas.create_text(sep2_x + sep_width // 2, 12, text=" - ", font=get_cjk_font(10), fill="#666666", anchor="center")
+        
+        # 4. 读取并显示 NEO.sav 内容（如果存在）
+        neo_label = None
+        neo_original_text = None
+        neo_sav_path = os.path.join(self.storage_dir, 'NEO.sav')
+        if os.path.exists(neo_sav_path):
+            try:
+                with open(neo_sav_path, 'r', encoding='utf-8') as f:
+                    encoded_content = f.read().strip()
+                
+                # URL解码
+                decoded_content = urllib.parse.unquote(encoded_content)
+                
+                # 根据内容决定显示方式和颜色
+                neo_frame = ctk.CTkFrame(parent, fg_color="transparent")
+                neo_frame.pack(pady=(20, 0))
+                
+                # 检查是否是特殊内容
+                if decoded_content == '"キミたちに永遠の祝福を"':
+                    # 使用翻译键 good_neo，颜色 #FFEB9E
+                    neo_text = self.t("good_neo")
+                    text_color = "#FFEB9E"
+                elif decoded_content == '"オマ工に永遠の制裁を"':
+                    # 使用翻译键 bad_neo，颜色鲜红
+                    neo_text = self.t("bad_neo")
+                    text_color = "#FF0000"  # 鲜红色
+                else:
+                    # 其他情况正常黑字展示
+                    neo_text = decoded_content
+                    text_color = "#000000"  # 黑色
+                
+                neo_label = ctk.CTkLabel(
+                    neo_frame,
+                    text=neo_text,
+                    font=get_cjk_font(14),
+                    text_color=text_color,
+                    wraplength=200  # 限制宽度以便换行
+                )
+                neo_label.pack()
+                neo_original_text = neo_text  # 保存原始文本用于乱码效果
+                
+            except Exception as e:
+                # 如果读取失败，忽略错误
+                pass
+        
+        # 如果满足狂信徒线条件，启动乱码效果
+        if is_zealot_route:
+            # 保存需要显示乱码的widget和原始文本
+            self._gibberish_widgets = []
+            self._original_texts = {}
+            
+            # 保存Canvas文字（需要保存Canvas对象、文字ID、位置和样式信息）
+            # 获取所有文字ID（按创建顺序）
+            all_text_ids = [item for item in sticker_canvas.find_all() if sticker_canvas.type(item) == 'text']
+            if len(all_text_ids) >= 3:
+                # 饼状图中心文字 - 标题
+                self._gibberish_widgets.append({
+                    'type': 'canvas_text',
+                    'canvas': sticker_canvas,
+                    'text_id': all_text_ids[-3],
+                    'x': center_x,
+                    'y': center_y - 20,
+                    'font': get_cjk_font(12, "bold"),
+                    'fill': "#333333",
+                    'anchor': 'center'
+                })
+                self._original_texts[len(self._gibberish_widgets) - 1] = self.t('stickers_statistics')
+                
+                # 饼状图中心文字 - 百分比
+                self._gibberish_widgets.append({
+                    'type': 'canvas_text',
+                    'canvas': sticker_canvas,
+                    'text_id': all_text_ids[-2],
+                    'x': center_x,
+                    'y': center_y + 2,
+                    'font': get_cjk_font(20, "bold"),
+                    'fill': "#333333",
+                    'anchor': 'center'
+                })
+                self._original_texts[len(self._gibberish_widgets) - 1] = f"{stickers_percent:.1f}%"
+                
+                # 饼状图中心文字 - 数量
+                self._gibberish_widgets.append({
+                    'type': 'canvas_text',
+                    'canvas': sticker_canvas,
+                    'text_id': all_text_ids[-1],
+                    'x': center_x,
+                    'y': center_y + 22,
+                    'font': get_cjk_font(11),
+                    'fill': "#666666",
+                    'anchor': 'center'
+                })
+                self._original_texts[len(self._gibberish_widgets) - 1] = f"{collected_stickers}/{total_stickers}"
+            
+            # 保存CTkLabel文字
+            self._gibberish_widgets.append({
+                'type': 'ctk_label',
+                'widget': mp_label_title
+            })
+            self._original_texts[len(self._gibberish_widgets) - 1] = self.t("total_mp")
+            
+            self._gibberish_widgets.append({
+                'type': 'ctk_label',
+                'widget': mp_label_value
+            })
+            self._original_texts[len(self._gibberish_widgets) - 1] = f"{whole_total_mp:,}"
+            
+            # 保存判定统计Canvas文字（需要保存每个文字的位置信息）
+            # 由于判定统计是分别绘制的，我们需要保存整个Canvas和重新绘制的信息
+            self._gibberish_widgets.append({
+                'type': 'judge_canvas',
+                'canvas': judge_canvas,
+                'perfect': perfect,
+                'good': good,
+                'bad': bad,
+                'canvas_width': canvas_width,
+                'font_obj': font_obj,
+                'center_x': center_x,
+                'text_width': text_width
+            })
+            self._original_texts[len(self._gibberish_widgets) - 1] = full_text
+            
+            # 如果NEO标签存在，也加入到乱码效果中
+            if neo_label is not None and neo_original_text is not None:
+                self._gibberish_widgets.append({
+                    'type': 'ctk_label',
+                    'widget': neo_label
+                })
+                self._original_texts[len(self._gibberish_widgets) - 1] = neo_original_text
+            
+            # 启动乱码更新定时器
+            self._update_gibberish_texts()
+    
+    def _generate_gibberish_text(self, original_text):
+        """生成乱码文本，将20-50%的字符替换为随机乱码"""
+        if not original_text:
+            return original_text
+        
+        # 随机选择替换比例（20-50%）
+        replace_ratio = random.uniform(0.2, 0.5)
+        num_replace = max(1, int(len(original_text) * replace_ratio))
+        
+        # 随机选择要替换的位置
+        positions_to_replace = random.sample(range(len(original_text)), min(num_replace, len(original_text)))
+        
+        # 生成乱码文本
+        result = list(original_text)
+        printable_chars = string.printable  # 包含所有可打印字符
+        
+        for pos in positions_to_replace:
+            # 替换为随机可打印字符
+            result[pos] = random.choice(printable_chars)
+        
+        return ''.join(result)
+    
+    def _update_gibberish_texts(self):
+        """更新所有文字为乱码效果"""
+        if not hasattr(self, '_gibberish_widgets') or not self._gibberish_widgets:
+            return
+        
+        for idx, widget_info in enumerate(self._gibberish_widgets):
+            if idx not in self._original_texts:
+                continue
+            
+            original_text = self._original_texts[idx]
+            gibberish_text = self._generate_gibberish_text(original_text)
+            
+            try:
+                if widget_info['type'] == 'canvas_text':
+                    # 更新Canvas文字：删除旧文字，创建新文字
+                    canvas = widget_info['canvas']
                     try:
-                        self.window.after_cancel(self._flash_animation_id)
+                        canvas.delete(widget_info['text_id'])
                     except:
                         pass
-                    self._flash_animation_id = None
+                    # 创建新文字
+                    new_text_id = canvas.create_text(
+                        widget_info['x'],
+                        widget_info['y'],
+                        text=gibberish_text,
+                        font=widget_info['font'],
+                        fill=widget_info['fill'],
+                        anchor=widget_info['anchor']
+                    )
+                    widget_info['text_id'] = new_text_id
                 
-                def do_update():
-                    try:
-                        canvas_width = canvas.winfo_width()
-                        canvas_height = canvas.winfo_height()
-                        if canvas_width > 1 and canvas_height > 1:
-                            # 检查尺寸是否真的改变了
-                            current_size = (canvas_width, canvas_height)
-                            if self._last_image_size == current_size and not should_apply_effect:
-                                self._image_update_pending = False
-                                return
-                            self._last_image_size = current_size
-                            
-                            # 计算缩放比例，保持宽高比
-                            img_width, img_height = image.size
-                            scale_w = canvas_width / img_width
-                            scale_h = canvas_height / img_height
-                            scale = min(scale_w, scale_h)
-                            
-                            new_width = int(img_width * scale)
-                            new_height = int(img_height * scale)
-                            
-                            # 使用BILINEAR而不是LANCZOS，速度更快，质量足够
-                            # 如果缩放比例很大，使用NEAREST会更快
-                            if scale < 0.5:
-                                resized_image = image.resize((new_width, new_height), Image.Resampling.BILINEAR)
-                            else:
-                                resized_image = image.resize((new_width, new_height), Image.Resampling.NEAREST)
-                            
-                            # 如果需要应用红色滤镜
-                            if should_apply_effect:
-                                resized_image = self.apply_red_filter(resized_image)
-                                # 保存处理后的图片供闪烁使用
-                                self._processed_image = resized_image
-                            
-                            photo = ImageTk.PhotoImage(resized_image)
-                            
-                            # 清除canvas并重新绘制（只清除图片canvas）
-                            canvas.delete("all")
-                            # 居中显示
-                            base_x = (canvas_width - new_width) // 2
-                            base_y = (canvas_height - new_height) // 2
-                            
-                            # 保存基础位置
-                            self._image_base_x = base_x
-                            self._image_base_y = base_y
-                            
-                            # 居中显示，不添加位移
-                            x = base_x
-                            y = base_y
-                            
-                            canvas.create_image(x, y, anchor="nw", image=photo)
-                            canvas.image = photo
-                            
-                            # 如果应用效果，启动闪烁动画（在更新完成后）
-                            if should_apply_effect:
-                                # 延迟启动闪烁动画，确保图片更新完成
-                                self.window.after(100, lambda: self.start_flash_animation(canvas, base_x, base_y, new_width, new_height))
-                    except Exception as e:
-                        canvas.delete("all")
-                        canvas.config(bg="white")
-                    finally:
-                        self._image_update_pending = False
+                elif widget_info['type'] == 'ctk_label':
+                    # 更新CTkLabel文字
+                    widget_info['widget'].configure(text=gibberish_text)
                 
-                # 延迟更新，避免频繁重采样
-                self.window.after(50, do_update)
-            
-            # 绑定大小变化事件（只绑定canvas，避免重复触发）
-            canvas.bind("<Configure>", update_image_size)
-            # 延迟一下再显示，确保canvas已经有尺寸
-            self.window.after(100, update_image_size)
-            
-        except Exception as e:
-            canvas.config(bg="white")
-    
-    def start_flash_animation(self, canvas, base_x, base_y, img_width, img_height):
-        """启动闪烁动画效果"""
-        # 取消之前的动画（如果存在）
-        if self._flash_animation_id:
-            self.window.after_cancel(self._flash_animation_id)
-        
-        # 保存canvas引用，确保只操作图片canvas
-        image_canvas = canvas
-        # 验证canvas是否为图片canvas
-        if not hasattr(self, '_image_canvas') or image_canvas != self._image_canvas:
-            # 如果传入的canvas不是图片canvas，使用存储的引用
-            if hasattr(self, '_image_canvas') and self._image_canvas:
-                image_canvas = self._image_canvas
-            else:
-                # 如果没有图片canvas，不启动动画
-                return
-        
-        def flash_animation():
-            """执行闪烁动画"""
-            try:
-                # 检查canvas是否仍然有效
-                if not hasattr(self, '_image_canvas') or not self._image_canvas:
-                    return
-                if image_canvas != self._image_canvas:
-                    return
-                try:
-                    # 检查canvas是否仍然存在
-                    image_canvas.winfo_exists()
-                except:
-                    return
-                
-                if not hasattr(self, 'image_ref') or not self.image_ref:
-                    return
-                
-                # 检查是否有图片更新正在进行，如果有则跳过本次动画
-                if hasattr(self, '_image_update_pending') and self._image_update_pending:
-                    # 延迟重试
-                    self._flash_animation_id = self.window.after(500, flash_animation)
-                    return
-                
-                # 清除canvas（只清除图片canvas）
-                image_canvas.delete("all")
-                
-                # 重新计算缩放（以防窗口大小改变）
-                canvas_width = image_canvas.winfo_width()
-                canvas_height = image_canvas.winfo_height()
-                if canvas_width > 1 and canvas_height > 1:
-                    img = self.image_ref
-                    scale_w = canvas_width / img.size[0]
-                    scale_h = canvas_height / img.size[1]
-                    scale = min(scale_w, scale_h)
+                elif widget_info['type'] == 'judge_canvas':
+                    # 重新绘制判定统计Canvas
+                    canvas = widget_info['canvas']
+                    canvas.delete("all")  # 清除所有内容
                     
-                    new_width = int(img.size[0] * scale)
-                    new_height = int(img.size[1] * scale)
+                    # 生成乱码文本
+                    perfect_text = self._generate_gibberish_text(f"{widget_info['perfect']:,}")
+                    good_text = self._generate_gibberish_text(f"{widget_info['good']:,}")
+                    bad_text = self._generate_gibberish_text(f"{widget_info['bad']:,}")
+                    full_text = f"{perfect_text} - {good_text} - {bad_text}"
                     
-                    # 重新缩放并应用红色滤镜
-                    # 如果缩放比例很大，使用NEAREST会更快
-                    if scale < 0.5:
-                        resized_image = img.resize((new_width, new_height), Image.Resampling.BILINEAR)
-                    else:
-                        resized_image = img.resize((new_width, new_height), Image.Resampling.NEAREST)
-                    resized_image = self.apply_red_filter(resized_image)
-                    photo = ImageTk.PhotoImage(resized_image)
+                    # 重新计算位置
+                    font_obj = widget_info['font_obj']
+                    text_width = font_obj.measure(full_text)
+                    center_x = widget_info['canvas_width'] // 2
+                    current_x = center_x - text_width // 2
                     
-                    # 更新基础位置（居中显示）
-                    base_x = (canvas_width - new_width) // 2
-                    base_y = (canvas_height - new_height) // 2
-                    self._image_base_x = base_x
-                    self._image_base_y = base_y
+                    # 重新绘制文本
+                    perfect_width = font_obj.measure(perfect_text)
+                    canvas.create_text(
+                        current_x + perfect_width // 2, 12,
+                        text=perfect_text,
+                        font=get_cjk_font(10),
+                        fill="#CC6DAE",
+                        anchor="center"
+                    )
+                    current_x += perfect_width + font_obj.measure(" - ")
                     
-                    # 直接居中显示，不添加位移
-                    image_canvas.create_image(base_x, base_y, anchor="nw", image=photo)
-                    image_canvas.image = photo
+                    good_width = font_obj.measure(good_text)
+                    canvas.create_text(
+                        current_x + good_width // 2, 12,
+                        text=good_text,
+                        font=get_cjk_font(10),
+                        fill="#F5CE88",
+                        anchor="center"
+                    )
+                    current_x += good_width + font_obj.measure(" - ")
                     
-                    # 保存处理后的图片供闪烁使用
-                    self._processed_image = resized_image
+                    bad_width = font_obj.measure(bad_text)
+                    canvas.create_text(
+                        current_x + bad_width // 2, 12,
+                        text=bad_text,
+                        font=get_cjk_font(10),
+                        fill="#6DB7AB",
+                        anchor="center"
+                    )
                     
-                    # 快速闪烁几次（每0.1秒一次，共3次）
-                    flash_count = [0]
-                    def quick_flash():
-                        try:
-                            # 再次检查canvas有效性
-                            if not hasattr(self, '_image_canvas') or not self._image_canvas:
-                                return
-                            if image_canvas != self._image_canvas:
-                                return
-                            try:
-                                image_canvas.winfo_exists()
-                            except:
-                                return
-                            
-                            # 检查是否有图片更新正在进行
-                            if hasattr(self, '_image_update_pending') and self._image_update_pending:
-                                # 延迟重试
-                                self._flash_animation_id = self.window.after(500, flash_animation)
-                                return
-                            
-                            flash_count[0] += 1
-                            if flash_count[0] <= 3:
-                                # 清除canvas（只清除图片canvas）
-                                image_canvas.delete("all")
-                                # 使用保存的基础位置（居中，不位移）
-                                current_base_x = self._image_base_x if self._image_base_x is not None else base_x
-                                current_base_y = self._image_base_y if self._image_base_y is not None else base_y
-                                
-                                # 闪烁时稍微变亮或变暗
-                                flash_intensity = random.uniform(0.7, 1.1)
-                                if self._processed_image:
-                                    enhancer = ImageEnhance.Brightness(self._processed_image)
-                                    flash_img = enhancer.enhance(flash_intensity)
-                                    flash_photo = ImageTk.PhotoImage(flash_img)
-                                else:
-                                    flash_photo = photo
-                                
-                                # 居中显示，不添加位移
-                                image_canvas.create_image(current_base_x, current_base_y, anchor="nw", image=flash_photo)
-                                image_canvas.image = flash_photo
-                                
-                                if flash_count[0] < 3:
-                                    self._flash_animation_id = self.window.after(100, quick_flash)
-                                else:
-                                    # 闪烁结束后，恢复原位置并等待5秒
-                                    image_canvas.delete("all")
-                                    image_canvas.create_image(current_base_x, current_base_y, anchor="nw", image=photo)
-                                    image_canvas.image = photo
-                                    self._flash_animation_id = self.window.after(5000, flash_animation)
-                        except Exception as e:
-                            # 出错时停止动画，避免无限重试
-                            self._flash_animation_id = None
-                    
-                    # 开始快速闪烁
-                    self._flash_animation_id = self.window.after(100, quick_flash)
+                    # 重新绘制分隔符
+                    sep_width = font_obj.measure(" - ")
+                    sep1_x = center_x - text_width // 2 + perfect_width
+                    sep2_x = sep1_x + sep_width + good_width
+                    canvas.create_text(sep1_x + sep_width // 2, 12, text=" - ", font=get_cjk_font(10), fill="#666666", anchor="center")
+                    canvas.create_text(sep2_x + sep_width // 2, 12, text=" - ", font=get_cjk_font(10), fill="#666666", anchor="center")
             except Exception as e:
-                # 出错时重新安排动画（但增加延迟，避免频繁重试）
-                self._flash_animation_id = self.window.after(5000, flash_animation)
+                # 如果widget已被销毁，忽略错误
+                pass
         
-        # 5秒后开始第一次闪烁
-        self._flash_animation_id = self.window.after(5000, flash_animation)
+        # 150ms后再次更新
+        self._gibberish_update_job = self.window.after(150, self._update_gibberish_texts)
     
     def create_section(self, parent, title):
         """创建带标题的分区"""
@@ -1106,13 +1323,6 @@ class SaveAnalyzer:
                               wraplength=int(self._cached_width * 0.85),
                               justify="left")
         hint_label.pack(anchor="w", padx=5, pady=(5, 0))
-        
-        # 8. 查看存档文件按钮
-        button_frame = tk.Frame(parent, bg="white")
-        button_frame.pack(fill="x", padx=10, pady=15)
-        view_file_button = ttk.Button(button_frame, text=self.t("view_save_file"), 
-                                      command=self.show_save_file_viewer)
-        view_file_button.pack(pady=5)
         
         # 所有组件创建完成后，更新滚动区域并绑定滚轮事件
         def finalize_scrolling():

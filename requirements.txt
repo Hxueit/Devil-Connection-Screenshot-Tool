@@ -1,0 +1,3 @@
+Pillow>=10.0.0
+customtkinter>=5.0.0
+

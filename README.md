@@ -9,7 +9,7 @@
 
 ゲームは最高です。[Steamストアページ](https://store.steampowered.com/app/3054820/)はこちら。ぜひ作者さんを応援してください。
 
-tkinter + [Sun Valley theme](https://github.com/rdbende/Sun-Valley-ttk-theme) でGUIを構築しています。
+tkinter + [Custom tkinter](https://customtkinter.tomschimansky.com/) でGUIを構築しています。
 
 ## 機能特徴
 
@@ -110,7 +110,7 @@ IssueやPull Requestは大歓迎です。
 
 游戏很棒，这里是 [Steam商店页面](https://store.steampowered.com/app/3054820/)，欢迎支持游戏作者。
 
-使用tkinter/[Sun Valley theme](https://github.com/rdbende/Sun-Valley-ttk-theme)构建GUI。
+使用tkinter/[Custom tkinter](https://customtkinter.tomschimansky.com/)构建GUI。
 
 ## 功能特性
 
@@ -223,7 +223,7 @@ A small, easy-to-use tool for managing and editing some .sav files for the game 
 
 Honestly fantastic game – here is the [Steam store page](https://store.steampowered.com/app/3054820/). Please consider supporting the developers.
 
-GUI is built with tkinter and the [Sun Valley theme](https://github.com/rdbende/Sun-Valley-ttk-theme).
+GUI is built with tkinter and [Custom tkinter](https://customtkinter.tomschimansky.com/).
 
 ## Features
 

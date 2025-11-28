@@ -13,9 +13,9 @@ from datetime import datetime
 import tempfile
 import zipfile
 import shutil
-import customtkinter as ctk
 import locale
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from io import BytesIO
 import webbrowser
@@ -24,6 +24,8 @@ import platform
 from translations import TRANSLATIONS
 from save_analyzer import SaveAnalyzer
 from utils import set_window_icon
+from backup_restore import BackupRestore
+from toast import Toast
 
 # From the sky bereft of stars
 
@@ -42,6 +44,30 @@ def get_cjk_font(size=10, weight="normal"):
         return (font_name, size, "bold")
     return (font_name, size)
 
+def get_parent_bg(widget):
+    """
+    获取父容器的背景色
+    """
+    try:
+        parent = widget.master
+        while parent:
+            try:
+                bg = parent.cget("bg")
+                if bg and bg != "":
+                    return bg
+            except:
+                pass
+            try:
+                bg = parent.cget("background")
+                if bg and bg != "":
+                    return bg
+            except:
+                pass
+            parent = parent.master if hasattr(parent, 'master') else None
+    except:
+        pass
+    return "white"  # 默认白色
+
 # Windows注册表支持，查找Steam路径使用
 if platform.system() == "Windows":
     try:
@@ -57,23 +83,33 @@ class SavTool:
         self.translations = TRANSLATIONS
         self.current_language = self.detect_system_language()
         self.root.title(self.t("window_title"))
-        self.root.geometry("800x550")
+        self.root.geometry("800x600")
         
         # 设置窗口图标
         set_window_icon(self.root)
         
-        # 应用 CustomTkinter 主题
-        ctk.set_appearance_mode("light")
-        ctk.set_default_color_theme("blue")
-
         style = ttk.Style()
-        # 配置 Label 背景为白色，去除灰色背景
-        style.configure("TLabel", background="white")
-        style.map("TLabel", background=[("active", "white")])
-        style.configure("TCheckbutton", background="white")
-        style.map("TCheckbutton", background=[("active", "white")])
-        style.configure("TButton", background="white")
-        style.map("TButton", background=[("active", "white")])
+        # 配置Label样式：明确设置背景色为白色，移除边框和高光
+        style.configure("TLabel", 
+                       background="white",
+                       borderwidth=0,
+                       relief="flat")
+        # 使用map覆盖所有状态下的背景色
+        style.map("TLabel",
+                 background=[("active", "white"), ("!active", "white")])
+        
+        # Checkbutton和Button也明确设置背景色
+        style.configure("TCheckbutton", 
+                       background="white",
+                       borderwidth=0,
+                       relief="flat")
+        style.map("TCheckbutton",
+                 background=[("active", "white"), ("!active", "white")])
+        
+        style.configure("TButton", 
+                       borderwidth=0)
+        style.map("TButton",
+                 background=[("active", "SystemButtonFace"), ("!active", "SystemButtonFace")])
         
         style.configure("TNotebook", 
                        borderwidth=0, 
@@ -130,11 +166,26 @@ class SavTool:
         self.screenshot_frame = tk.Frame(self.notebook)
         self.notebook.add(self.screenshot_frame, text=self.t("screenshot_management_tab"))
 
+        # Tab 3: 备份/还原界面
+        self.backup_restore_frame = tk.Frame(self.notebook)
+        self.notebook.add(self.backup_restore_frame, text=self.t("backup_restore_tab"))
+        
+        # 备份/还原界面的提示标签
+        self.backup_restore_hint_label = tk.Label(self.backup_restore_frame, text=self.t("select_dir_hint"), 
+                                                  fg="#D554BC", font=get_cjk_font(12))
+        self.backup_restore_hint_label.pack(pady=50)
+
         # 初始化存档分析界面（延迟到选择目录后）
         self.save_analyzer = None
         
+        # 初始化备份/还原管理器（延迟到选择目录后）
+        self.backup_restore = None
+        
         # 绑定 tab 切换事件，切换到存档分析页面时自动刷新
         self.notebook.bind("<<NotebookTabChanged>>", self.on_tab_changed)
+        
+        # 绑定窗口关闭事件，清理监控
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
         # 没有选择目录时的提示标签（在截图管理界面）
         self.hint_label = tk.Label(self.screenshot_frame, text=self.t("select_dir_hint"), 
@@ -301,6 +352,13 @@ class SavTool:
         self._file_list_cache_time = 0
         self._file_list_cache_ttl = 5  # 缓存5秒
         
+        # 存档文件监控相关
+        self.save_file_path = None
+        self.temp_file_path = None  # 临时文件路径 .temp_sf.sav
+        self.monitor_thread = None  # 监控线程
+        self.monitor_running = False  # 监控运行标志
+        self.active_toasts = []  # 活跃的toast列表
+        
         # 默认显示存档分析 tab（索引 0）
         self.notebook.select(0)
     
@@ -452,6 +510,314 @@ class SavTool:
         self.save_analyzer = SaveAnalyzer(self.analyzer_frame, self.storage_dir, 
                                           self.translations, self.current_language)
     
+    def init_backup_restore(self):
+        """初始化备份/还原界面"""
+        if not self.storage_dir:
+            return
+        
+        # 清除 backup_restore_frame 中的所有子组件（包括提示标签）
+        for widget in self.backup_restore_frame.winfo_children():
+            widget.destroy()
+        
+        # 创建BackupRestore实例
+        self.backup_restore = BackupRestore(self.storage_dir)
+        
+        # 创建UI布局（上下布局）
+        # 上方：备份按钮区域
+        backup_frame = tk.Frame(self.backup_restore_frame, bg="white")
+        backup_frame.pack(pady=20, fill="x")
+        
+        self.backup_button = ttk.Button(backup_frame, text=self.t("backup_button"), 
+                                   command=self.create_backup)
+        self.backup_button.pack(pady=10)
+        
+        # 进度条（初始隐藏）
+        self.backup_progress = ttk.Progressbar(backup_frame, mode='determinate', length=300)
+        self.backup_progress.pack(pady=5)
+        self.backup_progress.pack_forget()
+        
+        # 进度标签（初始隐藏）
+        self.backup_progress_label = tk.Label(backup_frame, text="", bg="white", fg="#666")
+        self.backup_progress_label.pack(pady=2)
+        self.backup_progress_label.pack_forget()
+        
+        # 下方：还原列表区域
+        restore_frame = tk.Frame(self.backup_restore_frame, bg="white")
+        restore_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # 还原列表标题和刷新按钮
+        restore_header = tk.Frame(restore_frame, bg="white")
+        restore_header.pack(fill="x", pady=5)
+        
+        self.backup_list_title = ttk.Label(restore_header, text=self.t("backup_list_title"), 
+                                 font=get_cjk_font(12, "bold"))
+        self.backup_list_title.pack(side="left", padx=5)
+        
+        self.backup_refresh_button = ttk.Button(restore_header, text=self.t("refresh"), 
+                                    command=self.refresh_backup_list)
+        self.backup_refresh_button.pack(side="right", padx=5)
+        
+        # 创建Treeview显示备份列表
+        list_container = tk.Frame(restore_frame, bg="white")
+        list_container.pack(fill="both", expand=True)
+        
+        restore_scrollbar = Scrollbar(list_container, orient="vertical")
+        restore_scrollbar.pack(side="right", fill="y")
+        
+        self.backup_tree = ttk.Treeview(list_container, 
+                                        columns=("timestamp", "filename", "size", "status"), 
+                                        show="headings", height=15,
+                                        yscrollcommand=restore_scrollbar.set)
+        
+        self.backup_tree.heading("timestamp", text=self.t("backup_timestamp"))
+        self.backup_tree.column("timestamp", width=180)
+        
+        self.backup_tree.heading("filename", text=self.t("backup_filename"))
+        self.backup_tree.column("filename", width=250)
+        
+        self.backup_tree.heading("size", text=self.t("backup_size"))
+        self.backup_tree.column("size", width=100)
+        
+        self.backup_tree.heading("status", text=self.t("backup_status"))
+        self.backup_tree.column("status", width=150)
+        
+        restore_scrollbar.config(command=self.backup_tree.yview)
+        self.backup_tree.pack(side="left", fill="both", expand=True)
+        
+        # 绑定选择事件
+        self.backup_tree.bind('<<TreeviewSelect>>', self.on_backup_select)
+        
+        # 按钮区域
+        button_area = tk.Frame(restore_frame, bg="white")
+        button_area.pack(pady=10)
+        
+        # 还原按钮（初始隐藏）
+        self.restore_button = ttk.Button(button_area, text=self.t("restore_button"), 
+                                         command=self.restore_backup)
+        self.restore_button.pack(side="left", padx=5)
+        self.restore_button.pack_forget()
+        
+        # 删除按钮（初始隐藏）
+        self.delete_backup_button = ttk.Button(button_area, text=self.t("delete_backup_button"), 
+                                                command=self.delete_backup)
+        self.delete_backup_button.pack(side="left", padx=5)
+        self.delete_backup_button.pack_forget()
+        
+        # 存储选中的备份路径
+        self.selected_backup_path = None
+        
+        # 刷新备份列表
+        self.refresh_backup_list()
+    
+    def create_backup(self):
+        """创建备份"""
+        if not self.storage_dir or not self.backup_restore:
+            messagebox.showerror(self.t("error"), self.t("select_dir_hint"))
+            return
+        
+        # 估算压缩后大小
+        estimated_size = self.backup_restore.estimate_compressed_size(self.storage_dir)
+        if estimated_size is None:
+            messagebox.showerror(self.t("error"), self.t("backup_estimate_failed"))
+            return
+        
+        # 格式化大小
+        size_str = self.backup_restore.format_size(estimated_size)
+        
+        # 确认对话框
+        result = self.ask_yesno(
+            self.t("backup_confirm_title"),
+            self.t("backup_confirm_text", size=size_str),
+            icon='question'
+        )
+        
+        if not result:
+            return
+        
+        # 显示进度条
+        self.backup_progress.pack(pady=5)
+        self.backup_progress_label.pack(pady=2)
+        self.backup_progress['value'] = 0
+        self.backup_progress_label.config(text="0%")
+        self.root.update()
+        
+        # 定义进度回调函数
+        def progress_callback(current, total):
+            progress = int((current / total) * 100)
+            self.root.after(0, lambda: self._update_backup_progress(progress, current, total))
+        
+        # 在后台线程中执行备份
+        def backup_thread():
+            try:
+                result = self.backup_restore.create_backup(self.storage_dir, progress_callback)
+                self.root.after(0, lambda: self._backup_completed(result))
+            except Exception as e:
+                self.root.after(0, lambda: self._backup_completed(None))
+        
+        threading.Thread(target=backup_thread, daemon=True).start()
+    
+    def _update_backup_progress(self, progress, current, total):
+        """更新备份进度条"""
+        self.backup_progress['value'] = progress
+        self.backup_progress_label.config(text=f"{progress}% ({current}/{total})")
+        self.root.update()
+    
+    def _backup_completed(self, result):
+        """备份完成回调"""
+        # 隐藏进度条
+        self.backup_progress.pack_forget()
+        self.backup_progress_label.pack_forget()
+        
+        if result is None:
+            messagebox.showerror(self.t("error"), self.t("backup_failed"))
+            return
+        
+        backup_path, actual_size, abs_path = result
+        
+        # 格式化实际大小
+        actual_size_str = self.backup_restore.format_size(actual_size)
+        
+        # 显示成功消息
+        filename = os.path.basename(backup_path)
+        success_msg = self.t("backup_success_text", 
+                            filename=filename, 
+                            size=actual_size_str, 
+                            path=abs_path)
+        messagebox.showinfo(self.t("backup_success_title"), success_msg)
+        
+        # 刷新备份列表
+        self.refresh_backup_list()
+    
+    def refresh_backup_list(self):
+        """刷新备份列表"""
+        if not self.backup_restore:
+            return
+        
+        # 清除现有项目
+        for item in self.backup_tree.get_children():
+            self.backup_tree.delete(item)
+        
+        # 获取备份目录
+        backup_dir = self.backup_restore.get_backup_dir()
+        if not backup_dir:
+            return
+        
+        # 扫描备份
+        backups = self.backup_restore.scan_backups(backup_dir)
+        
+        # 添加到列表
+        for zip_path, timestamp, has_info, file_size in backups:
+            filename = os.path.basename(zip_path)
+            size_str = self.backup_restore.format_size(file_size)
+            
+            if timestamp:
+                timestamp_str = timestamp.strftime('%Y-%m-%d %H:%M:%S')
+            else:
+                timestamp_str = ""
+            
+            if has_info:
+                status = ""
+            else:
+                status = self.t("no_info_file")
+            
+            self.backup_tree.insert("", tk.END, 
+                                   values=(timestamp_str, filename, size_str, status),
+                                   tags=(zip_path,))
+    
+    def on_backup_select(self, event):
+        """处理备份列表选择事件"""
+        selected = self.backup_tree.selection()
+        if selected:
+            item_id = selected[0]
+            tags = self.backup_tree.item(item_id, "tags")
+            if tags:
+                self.selected_backup_path = tags[0]
+                self.restore_button.pack(side="left", padx=5)
+                self.delete_backup_button.pack(side="left", padx=5)
+        else:
+            self.selected_backup_path = None
+            self.restore_button.pack_forget()
+            self.delete_backup_button.pack_forget()
+    
+    def delete_backup(self):
+        """删除备份"""
+        if not self.selected_backup_path:
+            return
+        
+        if not self.backup_restore:
+            return
+        
+        # 确认删除
+        filename = os.path.basename(self.selected_backup_path)
+        result = self.ask_yesno(
+            self.t("delete_backup_confirm_title"),
+            self.t("delete_backup_confirm_text", filename=filename),
+            icon='warning'
+        )
+        
+        if not result:
+            return
+        
+        # 执行删除
+        success = self.backup_restore.delete_backup(self.selected_backup_path)
+        
+        if success:
+            messagebox.showinfo(self.t("success"), self.t("delete_backup_success"))
+            # 清除选择
+            self.selected_backup_path = None
+            self.restore_button.pack_forget()
+            self.delete_backup_button.pack_forget()
+            # 刷新备份列表
+            self.refresh_backup_list()
+        else:
+            messagebox.showerror(self.t("error"), self.t("delete_backup_failed"))
+    
+    def restore_backup(self):
+        """还原备份"""
+        if not self.selected_backup_path:
+            return
+        
+        if not self.backup_restore:
+            return
+        
+        # 第一次确认
+        result = self.ask_yesno(
+            self.t("restore_confirm_title"),
+            self.t("restore_confirm_text"),
+            icon='warning'
+        )
+        
+        if not result:
+            return
+        
+        # 检查必需文件
+        missing_files = self.backup_restore.check_required_files(self.selected_backup_path)
+        
+        if missing_files:
+            # 第二次确认（如果有缺失文件）
+            files_str = ", ".join(missing_files)
+            result = self.ask_yesno(
+                self.t("restore_missing_files_title"),
+                self.t("restore_missing_files_text", files=files_str),
+                icon='warning'
+            )
+            
+            if not result:
+                return
+        
+        # 执行还原
+        success = self.backup_restore.restore_backup(self.selected_backup_path, self.storage_dir)
+        
+        if success:
+            messagebox.showinfo(self.t("success"), self.t("restore_success"))
+            # 刷新其他tab的数据
+            if self.storage_dir:
+                self.load_screenshots()
+                if self.save_analyzer:
+                    self.save_analyzer.refresh()
+        else:
+            messagebox.showerror(self.t("error"), self.t("restore_failed"))
+    
     def on_tab_changed(self, event=None):
         """处理 tab 切换事件，切换到存档分析页面时自动刷新"""
         try:
@@ -461,9 +827,478 @@ class SavTool:
             if current_tab == 0 and self.save_analyzer is not None:
                 # 自动刷新存档分析页面
                 self.save_analyzer.refresh()
+            # 如果切换到备份/还原 tab（索引 2）且 backup_restore 已初始化
+            elif current_tab == 2 and self.backup_restore is not None:
+                # 刷新备份列表
+                self.refresh_backup_list()
         except Exception:
             # 忽略错误，避免影响正常的 tab 切换
             pass
+    
+    def _start_file_monitor(self):
+        """启动存档文件监控"""
+        if not self.storage_dir:
+            return
+        
+        # 停止之前的监控（如果存在）
+        self._stop_file_monitor()
+        
+        # 设置存档文件路径和临时文件路径
+        self.save_file_path = os.path.join(self.storage_dir, 'DevilConnection_sf.sav')
+        self.temp_file_path = os.path.join(self.storage_dir, '.temp_sf.sav')
+        
+        # 清理可能存在的旧临时文件（防止上次异常退出遗留）
+        self._cleanup_temp_file()
+        
+        # 初始化临时文件：如果不存在或已存在，都尝试写入当前存档内容
+        self._initialize_temp_file()
+        
+        # 启动监控线程
+        self.monitor_running = True
+        self.monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
+        self.monitor_thread.start()
+    
+    def _initialize_temp_file(self):
+        """初始化临时文件：读取当前存档并写入临时文件"""
+        if not os.path.exists(self.save_file_path):
+            # 如果存档文件不存在，删除临时文件（如果存在）
+            if os.path.exists(self.temp_file_path):
+                try:
+                    os.remove(self.temp_file_path)
+                except:
+                    pass
+            return
+        
+        # 尝试读取当前存档文件（可能需要重试）
+        save_content = None
+        for retry in range(5):
+            save_content = self._read_file_raw(self.save_file_path)
+            if save_content is not None:
+                break
+            time.sleep(0.2)
+        
+        # 如果成功读取，写入临时文件
+        if save_content is not None:
+            self._write_temp_file(save_content)
+    
+    def _read_file_raw(self, file_path):
+        """读取文件的原始内容（未解码的字符串）"""
+        if not os.path.exists(file_path):
+            return None
+        
+        try:
+            # 方法1: 尝试正常打开
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    return f.read().strip()
+            except (IOError, OSError, PermissionError):
+                # 方法2: 如果失败，尝试二进制模式读取
+                try:
+                    with open(file_path, 'rb') as f:
+                        raw_data = f.read()
+                    return raw_data.decode('utf-8', errors='ignore').strip()
+                except (IOError, OSError, PermissionError):
+                    return None
+        except Exception:
+            return None
+    
+    def _write_temp_file(self, content):
+        """写入临时文件"""
+        try:
+            with open(self.temp_file_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+        except Exception:
+            pass
+    
+    def _read_temp_file(self):
+        """读取临时文件内容"""
+        if not os.path.exists(self.temp_file_path):
+            return None
+        return self._read_file_raw(self.temp_file_path)
+    
+    def _get_file_content_hash(self, content):
+        """获取文件内容的哈希值"""
+        if content is None:
+            return None
+        try:
+            import hashlib
+            return hashlib.md5(content.encode('utf-8')).hexdigest()
+        except:
+            return None
+    
+    def _stop_file_monitor(self):
+        """停止存档文件监控"""
+        self.monitor_running = False
+        if self.monitor_thread is not None:
+            # 等待线程结束（最多等待1秒）
+            self.monitor_thread.join(timeout=1.0)
+            self.monitor_thread = None
+        
+        # 清理临时文件
+        self._cleanup_temp_file()
+    
+    def _cleanup_temp_file(self):
+        """清理临时文件"""
+        if self.temp_file_path and os.path.exists(self.temp_file_path):
+            try:
+                os.remove(self.temp_file_path)
+            except Exception:
+                pass
+    
+    def _monitor_loop(self):
+        """监控循环（在后台线程中运行）"""
+        while self.monitor_running:
+            try:
+                self._check_file_changes()
+                # 每多长时间检查一次
+                time.sleep(0.1)
+            except Exception:
+                # 出错继续监控
+                pass
+    
+    def _check_file_changes(self):
+        """检查文件是否有变动（通过比较真实文件和临时文件）"""
+        if not self.save_file_path or not os.path.exists(self.save_file_path):
+            return
+        
+        # 读取临时文件（应该总是成功，因为是我们自己创建的）
+        temp_content = self._read_temp_file()
+        if temp_content is None:
+            # 如果临时文件不存在，重新初始化
+            self._initialize_temp_file()
+            return
+        
+        # 尝试读取真实存档文件（可能需要重试，因为可能被游戏锁定）
+        save_content = None
+        for retry in range(3):
+            save_content = self._read_file_raw(self.save_file_path)
+            if save_content is not None:
+                break
+            time.sleep(0.1)
+        
+        # 如果读取失败，跳过本次检查（下次再试）
+        if save_content is None:
+            return
+        
+        # 比较两个文件的内容
+        temp_hash = self._get_file_content_hash(temp_content)
+        save_hash = self._get_file_content_hash(save_content)
+        
+        # 如果内容不同，说明文件有变动
+        if temp_hash is not None and save_hash is not None and temp_hash != save_hash:
+            # 解析两个文件的数据并比较差异
+            try:
+                # 解析临时文件数据
+                temp_data = self._parse_save_content(temp_content)
+                # 解析真实文件数据
+                save_data = self._parse_save_content(save_content)
+                
+                if temp_data is not None and save_data is not None:
+                    # 直接使用深度比较（更可靠）
+                    changes = self._deep_compare_data(temp_data, save_data)
+                    if changes:
+                        # 使用 after() 安全地更新 UI（tkinter 不是线程安全的）
+                        # 使用默认参数避免lambda闭包问题
+                        self.root.after(0, lambda c=changes: self._show_change_notification(c))
+                    # 注意：即使changes为空，文件哈希已经不同，说明文件确实有变化
+                    # 但为了不显示无意义的通知，我们只在检测到具体变化时才显示
+                    # 如果文件哈希不同但changes为空，可能是比较逻辑的问题，暂时不显示通知
+                    
+                    # 无论是否检测到变化，都更新临时文件（因为文件哈希已经不同）
+                    self._write_temp_file(save_content)
+                elif temp_data is None or save_data is None:
+                    # 如果解析失败，至少更新临时文件内容（避免重复检测）
+                    self._write_temp_file(save_content)
+            except Exception as e:
+                # 如果解析失败，至少更新临时文件内容
+                self._write_temp_file(save_content)
+    
+    def _parse_save_content(self, content):
+        """解析存档文件内容为JSON对象"""
+        if not content:
+            return None
+        
+        try:
+            unquoted = urllib.parse.unquote(content)
+            data = json.loads(unquoted)
+            if isinstance(data, dict):
+                return data
+        except (json.JSONDecodeError, ValueError):
+            pass
+        return None
+    
+    def _load_save_file(self):
+        """加载存档文件（处理文件锁定问题）"""
+        if not self.save_file_path or not os.path.exists(self.save_file_path):
+            return None
+        
+        # 尝试多种方式读取文件，处理文件锁定问题
+        try:
+            # 方法1: 尝试正常打开（Python在Windows上默认支持共享读取）
+            try:
+                with open(self.save_file_path, 'r', encoding='utf-8') as f:
+                    encoded = f.read().strip()
+            except (IOError, OSError, PermissionError):
+                # 方法2: 如果失败，尝试二进制模式读取
+                try:
+                    with open(self.save_file_path, 'rb') as f:
+                        raw_data = f.read()
+                    encoded = raw_data.decode('utf-8', errors='ignore').strip()
+                except (IOError, OSError, PermissionError):
+                    # 方法3: 如果还是失败，尝试使用临时副本（Windows特有）
+                    if platform.system() == "Windows":
+                        try:
+                            # 使用shutil.copy2创建临时副本，然后读取
+                            import tempfile
+                            temp_fd, temp_path = tempfile.mkstemp(suffix='.sav')
+                            try:
+                                os.close(temp_fd)
+                                shutil.copy2(self.save_file_path, temp_path)
+                                with open(temp_path, 'r', encoding='utf-8') as f:
+                                    encoded = f.read().strip()
+                            finally:
+                                # 清理临时文件
+                                try:
+                                    os.remove(temp_path)
+                                except:
+                                    pass
+                        except:
+                            return None
+                    else:
+                        return None
+            
+            # 如果文件为空，返回None
+            if not encoded:
+                return None
+            
+            unquoted = urllib.parse.unquote(encoded)
+            data = json.loads(unquoted)
+            
+            # 确保返回的是有效的字典
+            if isinstance(data, dict):
+                return data
+            return None
+        except (IOError, OSError, PermissionError, json.JSONDecodeError, ValueError, UnicodeDecodeError):
+            # 文件读取失败、权限错误、JSON解析失败等，返回None
+            return None
+        except Exception:
+            # 其他未知错误，也返回None
+            return None
+    
+    def _values_equal(self, old_val, new_val):
+        """比较两个值是否相等（处理类型转换问题）"""
+        # None值处理
+        if old_val is None and new_val is None:
+            return True
+        if old_val is None or new_val is None:
+            return False
+        
+        # 如果类型相同，直接比较
+        if type(old_val) == type(new_val):
+            # 对于列表和字典，需要深度比较
+            if isinstance(old_val, list):
+                return old_val == new_val
+            if isinstance(old_val, dict):
+                return old_val == new_val
+            return old_val == new_val
+        
+        # 处理数字类型：int和float的数值比较
+        if isinstance(old_val, (int, float)) and isinstance(new_val, (int, float)):
+            # 对于整数，直接比较整数值
+            if isinstance(old_val, int) and isinstance(new_val, int):
+                return old_val == new_val
+            # 对于浮点数，使用很小的误差范围来比较
+            if isinstance(old_val, float) or isinstance(new_val, float):
+                # 如果都是整数（但类型是float），转换为int比较
+                if old_val.is_integer() and new_val.is_integer():
+                    return int(old_val) == int(new_val)
+                return abs(float(old_val) - float(new_val)) < 1e-10
+            return int(old_val) == int(new_val)
+        
+        # 处理布尔值：True/False 和 1/0 的比较
+        if isinstance(old_val, bool) and isinstance(new_val, (int, float)):
+            return old_val == (new_val != 0)
+        if isinstance(new_val, bool) and isinstance(old_val, (int, float)):
+            return new_val == (old_val != 0)
+        
+        # 处理字符串：去除首尾空白后比较
+        if isinstance(old_val, str) and isinstance(new_val, str):
+            return old_val.strip() == new_val.strip()
+        
+        # 其他情况，转换为字符串比较（但排除列表和字典）
+        if not isinstance(old_val, (dict, list)) and not isinstance(new_val, (dict, list)):
+            return str(old_val) == str(new_val)
+        
+        # 如果一个是列表/字典，另一个不是，肯定不相等
+        return False
+    
+    def _deep_compare_data(self, old_data, new_data, prefix=""):
+        """深度比较数据，找出所有差异（使用严格比较）"""
+        changes = []
+        
+        # 确保都是字典
+        if not isinstance(old_data, dict):
+            old_data = {}
+        if not isinstance(new_data, dict):
+            new_data = {}
+        
+        # 比较所有字段
+        all_keys = set(old_data.keys()) | set(new_data.keys())
+        
+        for key in all_keys:
+            full_key = f"{prefix}.{key}" if prefix else key
+            
+            old_value = old_data.get(key)
+            new_value = new_data.get(key)
+            
+            # 字段被删除
+            if key in old_data and key not in new_data:
+                changes.append(f"-{full_key}")
+            # 字段被新增
+            elif key not in old_data and key in new_data:
+                if isinstance(new_value, dict):
+                    nested_changes = self._deep_compare_data({}, new_value, full_key)
+                    changes.extend(nested_changes)
+                else:
+                    changes.append(f"+{full_key} = {self._format_value(new_value)}")
+            # 字段值发生变化
+            else:
+                # 先检查值是否相等（使用_values_equal进行智能比较）
+                if not self._values_equal(old_value, new_value):
+                    if isinstance(old_value, dict) and isinstance(new_value, dict):
+                        nested_changes = self._deep_compare_data(old_value, new_value, full_key)
+                        changes.extend(nested_changes)
+                    elif isinstance(old_value, list) and isinstance(new_value, list):
+                        list_changes = self._compare_lists(full_key, old_value, new_value)
+                        changes.extend(list_changes)
+                    else:
+                        # 普通值变化
+                        changes.append(f"{full_key} {self._format_value(old_value)}→{self._format_value(new_value)}")
+                # 如果值相等但类型不同，也记录变化（可能是游戏写入时的类型变化）
+                elif type(old_value) != type(new_value):
+                    # 对于数值类型，如果数值相同但类型不同，也记录
+                    if isinstance(old_value, (int, float)) and isinstance(new_value, (int, float)):
+                        if float(old_value) == float(new_value):
+                            # 数值相同但类型不同，也记录（比如int(7) vs float(7.0)）
+                            changes.append(f"{full_key} {self._format_value(old_value)} ({type(old_value).__name__})→{self._format_value(new_value)} ({type(new_value).__name__})")
+        
+        return changes
+    
+    def _compare_save_data(self, old_data, new_data, prefix=""):
+        """比较两个存档数据，返回变更列表"""
+        changes = []
+        
+        # 确保都是字典
+        if not isinstance(old_data, dict):
+            old_data = {}
+        if not isinstance(new_data, dict):
+            new_data = {}
+        
+        # 比较所有字段
+        all_keys = set(old_data.keys()) | set(new_data.keys())
+        
+        for key in all_keys:
+            # 构建完整键名（支持嵌套）
+            full_key = f"{prefix}.{key}" if prefix else key
+            
+            old_value = old_data.get(key)
+            new_value = new_data.get(key)
+            
+            # 字段被删除
+            if key in old_data and key not in new_data:
+                changes.append(f"- {full_key}")
+            # 字段被新增
+            elif key not in old_data and key in new_data:
+                if isinstance(new_value, dict):
+                    # 如果是字典，递归比较
+                    nested_changes = self._compare_save_data({}, new_value, full_key)
+                    changes.extend(nested_changes)
+                else:
+                    changes.append(f"+ {full_key} = {self._format_value(new_value)}")
+            # 字段值发生变化
+            else:
+                # 先使用严格比较（直接 !=）
+                if old_value != new_value:
+                    # 如果是字典，递归比较
+                    if isinstance(old_value, dict) and isinstance(new_value, dict):
+                        nested_changes = self._compare_save_data(old_value, new_value, full_key)
+                        changes.extend(nested_changes)
+                    # 如果是列表，比较列表差异
+                    elif isinstance(old_value, list) and isinstance(new_value, list):
+                        list_changes = self._compare_lists(full_key, old_value, new_value)
+                        changes.extend(list_changes)
+                    else:
+                        # 普通值变化（使用严格比较，确保所有变化都能检测到）
+                        changes.append(f"{full_key} {self._format_value(old_value)}→{self._format_value(new_value)}")
+                # 如果严格比较相等，但类型不同，也记录变化（可能是游戏写入时的类型变化）
+                elif type(old_value) != type(new_value):
+                    # 对于数字类型，如果数值相同但类型不同，也记录
+                    if isinstance(old_value, (int, float)) and isinstance(new_value, (int, float)):
+                        if float(old_value) == float(new_value):
+                            # 数值相同但类型不同，也记录（比如int(7) vs float(7.0)）
+                            changes.append(f"{full_key} {self._format_value(old_value)} ({type(old_value).__name__})→{self._format_value(new_value)} ({type(new_value).__name__})")
+        
+        return changes
+    
+    def _compare_lists(self, key, old_list, new_list):
+        """比较两个列表的差异"""
+        changes = []
+        old_set = set(old_list)
+        new_set = set(new_list)
+        
+        # 添加的元素
+        added = new_set - old_set
+        for item in added:
+            changes.append(f"{key}.append({self._format_value(item)})")
+        
+        # 移除的元素
+        removed = old_set - new_set
+        for item in removed:
+            changes.append(f"{key}.remove({self._format_value(item)})")
+        
+        return changes
+    
+    def _format_value(self, value):
+        """格式化值用于显示"""
+        if isinstance(value, (dict, list)):
+            return str(value)
+        elif isinstance(value, str):
+            return f'"{value}"'
+        elif isinstance(value, float):
+            # 如果是浮点数，检查是否为整数
+            if value.is_integer():
+                return str(int(value))
+            return str(value)
+        elif isinstance(value, bool):
+            return str(value)
+        else:
+            return str(value)
+    
+    def _show_change_notification(self, changes):
+        """显示存档文件变动通知"""
+        # 构建消息（硬编码中文）
+        message_lines = ["sf.sav文件有如下更改："]
+        message_lines.extend(changes)
+        message = "\n".join(message_lines)
+        
+        # 创建新的通知（自动堆叠在上方）
+        toast = Toast(
+            self.root,
+            message,
+            duration=15000,  # 显示时间
+            fade_in=200,     # 淡入
+            fade_out=200     # 淡出
+        )
+        
+        # 添加到活跃列表（Toast类会自动管理）
+        self.active_toasts.append(toast)
+    
+    def on_closing(self):
+        """窗口关闭事件处理"""
+        # 停止文件监控（会清理临时文件）
+        self._stop_file_monitor()
+        # 关闭窗口
+        self.root.destroy()
     
     def show_save_analyzer(self):
         """切换到存档分析 tab（保留此方法以兼容菜单，但菜单将被移除）"""
@@ -494,6 +1329,7 @@ class SavTool:
         try:
             self.notebook.tab(0, text=self.t("save_analyzer_tab"))
             self.notebook.tab(1, text=self.t("screenshot_management_tab"))
+            self.notebook.tab(2, text=self.t("backup_restore_tab"))
         except:
             pass
         
@@ -556,6 +1392,23 @@ class SavTool:
         self.export_button.config(text=self.t("export_image"))
         self.batch_export_button.config(text=self.t("batch_export"))
         
+        # 更新备份/还原界面文本（如果已初始化）
+        if hasattr(self, 'backup_button') and self.backup_button:
+            self.backup_button.config(text=self.t("backup_button"))
+        if hasattr(self, 'backup_list_title') and self.backup_list_title:
+            self.backup_list_title.config(text=self.t("backup_list_title"))
+        if hasattr(self, 'backup_refresh_button') and self.backup_refresh_button:
+            self.backup_refresh_button.config(text=self.t("refresh"))
+        if hasattr(self, 'backup_tree') and self.backup_tree:
+            self.backup_tree.heading("timestamp", text=self.t("backup_timestamp"))
+            self.backup_tree.heading("filename", text=self.t("backup_filename"))
+            self.backup_tree.heading("size", text=self.t("backup_size"))
+            self.backup_tree.heading("status", text=self.t("backup_status"))
+        if hasattr(self, 'restore_button') and self.restore_button:
+            self.restore_button.config(text=self.t("restore_button"))
+        if hasattr(self, 'delete_backup_button') and self.delete_backup_button:
+            self.delete_backup_button.config(text=self.t("delete_backup_button"))
+        
         if self.storage_dir:
             self.load_screenshots()
 
@@ -576,6 +1429,9 @@ class SavTool:
             self.load_screenshots()
             self.update_batch_export_button()
             self.init_save_analyzer()
+            self.init_backup_restore()
+            # 启动文件监控
+            self._start_file_monitor()
         else:
             messagebox.showerror(self.t("error"), self.t("dir_error"))
     
@@ -743,6 +1599,10 @@ class SavTool:
             self.update_batch_export_button()
             # 初始化存档分析界面
             self.init_save_analyzer()
+            # 初始化备份/还原界面
+            self.init_backup_restore()
+            # 启动文件监控
+            self._start_file_monitor()
         else:
             messagebox.showinfo(self.t("warning"), self.t("steam_detect_not_found"))
 
@@ -1711,7 +2571,6 @@ class SavTool:
         total_images = len(image_ids)
         
         # 计算需要的行数（每行4列，每列3张图片，所以每行12张图片）
-        # 但实际上我们按照3行4列的方式排列，所以需要计算总行数
         # 每3行显示12张图片（3行 × 4列）
         rows_per_group = 3
         cols_per_group = 4

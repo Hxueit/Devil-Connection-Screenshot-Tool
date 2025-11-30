@@ -422,7 +422,7 @@ TRANSLATIONS = {
         "total_characters": "Total Characters",
         "collected_characters": "Collected Characters",
         "missing_characters": "Missing Characters",
-        "stickers_statistics": "Stickers Statistics",
+        "stickers_statistics": "Stickers",
         "total_stickers": "Total Stickers",
         "collected_stickers": "Collected Stickers",
         "missing_stickers_count": "Missing Stickers Count",
@@ -491,8 +491,8 @@ TRANSLATIONS = {
         "cannot_edit_collapsed_detail": "This variable is collapsed and cannot be edited.\n\nTo edit this variable, please check the 'Disable Collapse/Horizontal' checkbox above first.",
         "refresh_confirm_title": "Confirm Action",
         "unsaved_changes_warning": "You have unsaved changes. This action will cause the changes to be lost.\n\nContinue with this action?",
-        "good_neo": "May you always be happy",
-        "bad_neo": "May you always be cursed",
+        "good_neo": "May your days be filled with everlasting joy.",
+        "bad_neo": "Granting you eternal judgment.",
         
         # File change notification
         "save_file_changed_message": "Save file updated",

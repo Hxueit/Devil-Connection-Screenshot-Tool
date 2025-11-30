@@ -3,6 +3,7 @@
 """
 import tkinter as tk
 import platform
+from styles import get_cjk_font, Colors
 
 
 class Toast:
@@ -37,7 +38,7 @@ class Toast:
         self.window.attributes("-topmost", True)  # 置顶，确保全屏模式下也能显示
         
         # 设置窗口样式（深色半透明背景）
-        self.window.configure(bg="#1a1a1a")
+        self.window.configure(bg=Colors.TOAST_BG)
         
         # 获取屏幕尺寸
         screen_width = root.winfo_screenwidth()
@@ -56,16 +57,15 @@ class Toast:
                 self.supports_alpha = False
         
         # 创建内容框架
-        content_frame = tk.Frame(self.window, bg="#1a1a1a")
+        content_frame = tk.Frame(self.window, bg=Colors.TOAST_BG)
         content_frame.pack(fill="x", padx=10, pady=8)
         
         # 使用Text widget以支持彩色文本
-        font_name = "Microsoft YaHei" if platform.system() == "Windows" else "Arial"
         message_text = tk.Text(
             content_frame,
-            font=(font_name, 9),
-            fg="#b0b0b0",  # 浅灰色，不显眼（默认颜色）
-            bg="#1a1a1a",
+            font=get_cjk_font(9),
+            fg=Colors.TOAST_TEXT,  # 浅灰色，不显眼（默认颜色）
+            bg=Colors.TOAST_BG,
             wrap="word",
             relief="flat",
             borderwidth=0,
@@ -80,7 +80,7 @@ class Toast:
         # 配置颜色标签
         message_text.tag_configure("green", foreground="#4ade80")  # 绿色
         message_text.tag_configure("red", foreground="#f87171")    # 红色
-        message_text.tag_configure("default", foreground="#b0b0b0") # 默认灰色
+        message_text.tag_configure("default", foreground=Colors.TOAST_TEXT) # 默认灰色
         
         # 解析消息并应用颜色
         self._insert_colored_text(message_text, message)

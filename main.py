@@ -26,47 +26,9 @@ from save_analyzer import SaveAnalyzer
 from utils import set_window_icon
 from backup_restore import BackupRestore
 from toast import Toast
+from styles import get_cjk_font, get_parent_bg, init_styles, Colors, Debouncer
 
 # From the sky bereft of stars
-
-def get_cjk_font(size=10, weight="normal"):
-    """
-    获取适合中文和日文的字体
-    """
-    if platform.system() == "Windows":
-        font_name = "Microsoft YaHei"
-    elif platform.system() == "Darwin":  # macOS
-        font_name = "PingFang SC"
-    else:  # Linux
-        font_name = "Arial"
-    
-    if weight == "bold":
-        return (font_name, size, "bold")
-    return (font_name, size)
-
-def get_parent_bg(widget):
-    """
-    获取父容器的背景色
-    """
-    try:
-        parent = widget.master
-        while parent:
-            try:
-                bg = parent.cget("bg")
-                if bg and bg != "":
-                    return bg
-            except:
-                pass
-            try:
-                bg = parent.cget("background")
-                if bg and bg != "":
-                    return bg
-            except:
-                pass
-            parent = parent.master if hasattr(parent, 'master') else None
-    except:
-        pass
-    return "white"  # 默认白色
 
 # Windows注册表支持，查找Steam路径使用
 if platform.system() == "Windows":
@@ -88,40 +50,8 @@ class SavTool:
         # 设置窗口图标
         set_window_icon(self.root)
         
-        style = ttk.Style()
-        # 配置Label样式：明确设置背景色为白色，移除边框和高光
-        style.configure("TLabel", 
-                       background="white",
-                       borderwidth=0,
-                       relief="flat")
-        # 使用map覆盖所有状态下的背景色
-        style.map("TLabel",
-                 background=[("active", "white"), ("!active", "white")])
-        
-        # Checkbutton和Button也明确设置背景色
-        style.configure("TCheckbutton", 
-                       background="white",
-                       borderwidth=0,
-                       relief="flat")
-        style.map("TCheckbutton",
-                 background=[("active", "white"), ("!active", "white")])
-        
-        style.configure("TButton", 
-                       borderwidth=0)
-        style.map("TButton",
-                 background=[("active", "SystemButtonFace"), ("!active", "SystemButtonFace")])
-        
-        style.configure("TNotebook", 
-                       borderwidth=0, 
-                       background="#fafafa")
-        style.configure("TNotebook.Tab", 
-                       padding=[16, 1],  # 左右，上下
-                       font=get_cjk_font(10),
-                       borderwidth=0)
-        # 配置 tab 的背景色和选中状态
-        style.map("TNotebook.Tab",
-                 background=[("selected", "#fafafa"), ("!selected", "#e8e8e8")],
-                 expand=[("selected", [1, 1, 1, 0])])
+        # 初始化统一样式（解决文字底色问题）
+        init_styles(self.root)
 
         # 创建菜单栏
         self.menubar = tk.Menu(root)
@@ -234,16 +164,20 @@ class SavTool:
         list_frame.pack(pady=5)
         
         # 预览区域（左侧）
-        preview_frame = tk.Frame(list_frame)
+        preview_frame = tk.Frame(list_frame, bg=Colors.WHITE)
         preview_frame.pack(side="left", padx=5)
-        self.preview_label_text = ttk.Label(preview_frame, text=self.t("preview"), font=get_cjk_font(10))
+        # 使用 tk.Label 并设置与父容器相同的背景色，避免底色问题
+        self.preview_label_text = tk.Label(preview_frame, text=self.t("preview"), 
+                                          font=get_cjk_font(10), bg=Colors.WHITE)
         self.preview_label_text.pack()
 
         # 限制预览Label的大小
-        preview_container = tk.Frame(preview_frame, width=160, height=120, bg="lightgray", relief="sunken")
+        preview_container = tk.Frame(preview_frame, width=160, height=120, 
+                                    bg=Colors.PREVIEW_BG, relief="sunken")
         preview_container.pack()
         preview_container.pack_propagate(False) 
-        self.preview_label = Label(preview_container, bg="lightgray")
+        # 预览 Label 使用与容器相同的背景色
+        self.preview_label = Label(preview_container, bg=Colors.PREVIEW_BG)
         self.preview_label.pack(fill="both", expand=True)
         self.preview_photo = None
         
@@ -524,7 +458,7 @@ class SavTool:
         
         # 创建UI布局（上下布局）
         # 上方：备份按钮区域
-        backup_frame = tk.Frame(self.backup_restore_frame, bg="white")
+        backup_frame = tk.Frame(self.backup_restore_frame, bg=Colors.WHITE)
         backup_frame.pack(pady=20, fill="x")
         
         self.backup_button = ttk.Button(backup_frame, text=self.t("backup_button"), 
@@ -537,16 +471,16 @@ class SavTool:
         self.backup_progress.pack_forget()
         
         # 进度标签（初始隐藏）
-        self.backup_progress_label = tk.Label(backup_frame, text="", bg="white", fg="#666")
+        self.backup_progress_label = tk.Label(backup_frame, text="", bg=Colors.WHITE, fg="#666")
         self.backup_progress_label.pack(pady=2)
         self.backup_progress_label.pack_forget()
         
         # 下方：还原列表区域
-        restore_frame = tk.Frame(self.backup_restore_frame, bg="white")
+        restore_frame = tk.Frame(self.backup_restore_frame, bg=Colors.WHITE)
         restore_frame.pack(fill="both", expand=True, padx=10, pady=10)
         
         # 还原列表标题和刷新按钮
-        restore_header = tk.Frame(restore_frame, bg="white")
+        restore_header = tk.Frame(restore_frame, bg=Colors.WHITE)
         restore_header.pack(fill="x", pady=5)
         
         self.backup_list_title = ttk.Label(restore_header, text=self.t("backup_list_title"), 
@@ -558,7 +492,7 @@ class SavTool:
         self.backup_refresh_button.pack(side="right", padx=5)
         
         # 创建Treeview显示备份列表
-        list_container = tk.Frame(restore_frame, bg="white")
+        list_container = tk.Frame(restore_frame, bg=Colors.WHITE)
         list_container.pack(fill="both", expand=True)
         
         restore_scrollbar = Scrollbar(list_container, orient="vertical")
@@ -588,7 +522,7 @@ class SavTool:
         self.backup_tree.bind('<<TreeviewSelect>>', self.on_backup_select)
         
         # 按钮区域
-        button_area = tk.Frame(restore_frame, bg="white")
+        button_area = tk.Frame(restore_frame, bg=Colors.WHITE)
         button_area.pack(pady=10)
         
         # 还原按钮（初始隐藏）
@@ -947,11 +881,14 @@ class SavTool:
     
     def _monitor_loop(self):
         """监控循环（在后台线程中运行）"""
+        # 记录上次检测到的文件修改时间
+        self._last_mtime = 0
+        
         while self.monitor_running:
             try:
                 self._check_file_changes()
-                # 每多长时间检查一次
-                time.sleep(0.1)
+                # 性能优化：增加轮询间隔到0.3秒，对于游戏存档足够了
+                time.sleep(0.3)
             except Exception:
                 # 出错继续监控
                 pass
@@ -960,6 +897,16 @@ class SavTool:
         """检查文件是否有变动（通过比较真实文件和临时文件）"""
         if not self.save_file_path or not os.path.exists(self.save_file_path):
             return
+        
+        # 性能优化：先检查文件修改时间，避免不必要的内容读取
+        try:
+            current_mtime = os.path.getmtime(self.save_file_path)
+            if hasattr(self, '_last_mtime') and current_mtime == self._last_mtime:
+                # 文件未修改，跳过内容检查
+                return
+            self._last_mtime = current_mtime
+        except (OSError, IOError):
+            pass
         
         # 读取临时文件（应该总是成功，因为是我们自己创建的）
         temp_content = self._read_temp_file()
@@ -2521,7 +2468,7 @@ class SavTool:
                 photo = ImageTk.PhotoImage(preview_img)
                 
                 # 更新预览Label
-                self.preview_label.config(image=photo, bg="white", text="")
+                self.preview_label.config(image=photo, bg=Colors.WHITE, text="")
                 self.preview_photo = photo 
             finally:
                 # 确保图片对象被正确关闭
@@ -2554,9 +2501,9 @@ class SavTool:
         set_window_icon(gallery_window)
         
         # 创建滚动区域
-        canvas = tk.Canvas(gallery_window, bg="white")
+        canvas = tk.Canvas(gallery_window, bg=Colors.WHITE)
         scrollbar = Scrollbar(gallery_window, orient="vertical", command=canvas.yview)
-        scrollable_frame = tk.Frame(canvas, bg="white")
+        scrollable_frame = tk.Frame(canvas, bg=Colors.WHITE)
         
         scrollable_frame.bind(
             "<Configure>",
@@ -2587,12 +2534,12 @@ class SavTool:
         # 为每个组创建显示区域
         for group_idx in range(num_groups):
             # 创建组框架
-            group_frame = tk.Frame(scrollable_frame, bg="white")
+            group_frame = tk.Frame(scrollable_frame, bg=Colors.WHITE)
             group_frame.pack(pady=20, padx=20, fill="both", expand=True)
             
             # 创建3行4列的网格
             for row in range(rows_per_group):
-                row_frame = tk.Frame(group_frame, bg="white")
+                row_frame = tk.Frame(group_frame, bg=Colors.WHITE)
                 row_frame.pack(side="top", pady=5)
                 
                 for col in range(cols_per_group):
@@ -2600,7 +2547,7 @@ class SavTool:
                     image_idx = group_idx * images_per_group + row + col * rows_per_group
                     
                     # 创建列框架（用于放置图片和分隔线）
-                    col_frame = tk.Frame(row_frame, bg="white")
+                    col_frame = tk.Frame(row_frame, bg=Colors.WHITE)
                     col_frame.pack(side="left", padx=5)
                     
                     if image_idx < total_images:
@@ -2622,7 +2569,7 @@ class SavTool:
                         placeholder_label.place(relx=0.5, rely=0.5, anchor="center")
                         
                         # 在下方添加一个空的文本标签，模拟图片下方的ID显示区域
-                        placeholder_id_label = tk.Label(col_frame, text="", bg="white", font=get_cjk_font(8))
+                        placeholder_id_label = tk.Label(col_frame, text="", bg=Colors.WHITE, font=get_cjk_font(8))
                         placeholder_id_label.pack()
                     
                     # 在第2列和第3列之间添加分隔线（col=1之后，即第2列之后）
@@ -2632,7 +2579,7 @@ class SavTool:
             
             # 在每页下面显示页面编号
             page_label = tk.Label(group_frame, text=f"{self.t('page')} {group_idx + 1}", 
-                                 bg="white", font=get_cjk_font(12, "bold"), fg="gray")
+                                 bg=Colors.WHITE, font=get_cjk_font(12, "bold"), fg="gray")
             page_label.pack(pady=10)
         
         canvas.pack(side="left", fill="both", expand=True)
@@ -2694,7 +2641,7 @@ class SavTool:
                                     anchor="center", justify="center")
         placeholder_label.place(relx=0.5, rely=0.5, anchor="center")
         
-        placeholder_id_label = tk.Label(parent_frame, text="", bg="white", font=get_cjk_font(8))
+        placeholder_id_label = tk.Label(parent_frame, text="", bg=Colors.WHITE, font=get_cjk_font(8))
         placeholder_id_label.pack()
         
         # 返回容器和标签，方便后续销毁
@@ -2715,17 +2662,28 @@ class SavTool:
             if id_str not in self.sav_pairs:
                 return id_str, None
             
+            # 优先使用缩略图文件（更小，加载更快）
+            thumb_file = self.sav_pairs[id_str][1]
             main_file = self.sav_pairs[id_str][0]
-            if not main_file:
-                return id_str, None
             
-            main_sav = os.path.join(self.storage_dir, main_file)
-            if not os.path.exists(main_sav):
+            # 选择要加载的文件：优先缩略图，fallback 到主图
+            sav_file = None
+            if thumb_file:
+                thumb_path = os.path.join(self.storage_dir, thumb_file)
+                if os.path.exists(thumb_path):
+                    sav_file = thumb_path
+            
+            if not sav_file and main_file:
+                main_path = os.path.join(self.storage_dir, main_file)
+                if os.path.exists(main_path):
+                    sav_file = main_path
+            
+            if not sav_file:
                 return id_str, None
             
             try:
-                # 解码主 .sav 获取 PNG 数据
-                with open(main_sav, 'r', encoding='utf-8') as f:
+                # 解码 .sav 获取 PNG 数据
+                with open(sav_file, 'r', encoding='utf-8') as f:
                     encoded = f.read().strip()
                 unquoted = urllib.parse.unquote(encoded)
                 data_uri = json.loads(unquoted)
@@ -2773,7 +2731,7 @@ class SavTool:
                 placeholder_container.destroy()
                 
                 # 创建图片Label
-                img_label = tk.Label(col_frame, image=photo, bg="white", text=id_str, 
+                img_label = tk.Label(col_frame, image=photo, bg=Colors.WHITE, text=id_str, 
                                     compound="top", font=get_cjk_font(8))
                 img_label.pack()
             except Exception as e:

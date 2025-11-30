@@ -8,28 +8,10 @@ import math
 import time
 from translations import TRANSLATIONS
 from utils import set_window_icon
+from styles import get_cjk_font, init_styles, Colors, ease_out_cubic, Debouncer
 import re
 import random
 import string
-
-def get_cjk_font(size=10, weight="normal"):
-    """
-    获取适合中文和日文的字体
-    """
-    if platform.system() == "Windows":
-        font_name = "Microsoft YaHei"
-    elif platform.system() == "Darwin":  # macOS
-        font_name = "PingFang SC"
-    else:  # Linux
-        font_name = "Arial"
-    
-    if weight == "bold":
-        return (font_name, size, "bold")
-    return (font_name, size)
-
-
-def ease_out_cubic(t):
-    return 1 - pow(1 - t, 3)
 
 
 class SaveAnalyzer:
@@ -41,23 +23,7 @@ class SaveAnalyzer:
         
         self.window = parent
         
-        # 配置Label样式：明确设置背景色为白色，移除边框和高光
-        style = ttk.Style()
-        style.configure("TLabel", 
-                       background="white",
-                       borderwidth=0,
-                       relief="flat")
-        # 使用map覆盖所有状态下的背景色
-        style.map("TLabel",
-                 background=[("active", "white"), ("!active", "white")])
-        
-        # Checkbutton也明确设置背景色
-        style.configure("TCheckbutton", 
-                       background="white",
-                       borderwidth=0,
-                       relief="flat")
-        style.map("TCheckbutton",
-                 background=[("active", "white"), ("!active", "white")])
+        # 样式已在主程序中通过 init_styles() 初始化
         
         # 性能优化：缓存宽度值，使用防抖机制避免频繁更新
         # 获取窗口宽度并计算2/3作为方框宽度
@@ -70,7 +36,7 @@ class SaveAnalyzer:
         self._width_update_pending = False
         
         # 创建顶部控制栏
-        control_frame = tk.Frame(self.window, bg="white")
+        control_frame = tk.Frame(self.window, bg=Colors.WHITE)
         control_frame.pack(fill="x", padx=10, pady=5)
         
         # 显示变量名复选框
@@ -90,6 +56,8 @@ class SaveAnalyzer:
         self._stats_widgets = {}  # 存储统计面板中的 widget 引用（canvas、label 等）
         self._is_initialized = False  # 标记是否已完成首次初始化
         self._dynamic_widgets = {}  # 存储动态内容（如缺失结局列表）的 widget 引用
+        self._section_title_widgets = {}  # 存储 section 标题和按钮的引用，用于语言切换
+        self._hint_labels = []  # 存储提示标签的引用，用于语言切换
         
         # 刷新按钮（右上角）
         self.refresh_button = ttk.Button(control_frame, text=self.t("refresh"), 
@@ -97,20 +65,20 @@ class SaveAnalyzer:
         self.refresh_button.pack(side="right", padx=5)
         
         # 创建主容器Frame，用于放置PanedWindow和滚动条
-        main_container = tk.Frame(self.window, bg="white")
+        main_container = tk.Frame(self.window, bg=Colors.WHITE)
         main_container.pack(fill="both", expand=True)
         
         # 创建PanedWindow分割左右区域（隐藏分割线）
-        main_paned = tk.PanedWindow(main_container, orient="horizontal", sashwidth=0, bg="white", sashrelief='flat')
+        main_paned = tk.PanedWindow(main_container, orient="horizontal", sashwidth=0, bg=Colors.WHITE, sashrelief='flat')
         main_paned.pack(side="left", fill="both", expand=True)
         
         # 左侧2/3区域：可滚动的内容区域
-        left_frame = tk.Frame(main_paned, bg="white")
+        left_frame = tk.Frame(main_paned, bg=Colors.WHITE)
         main_paned.add(left_frame, width=800, minsize=400)
         
         # 创建滚动区域
-        canvas = tk.Canvas(left_frame, bg="white")
-        scrollable_frame = tk.Frame(canvas, bg="white")
+        canvas = tk.Canvas(left_frame, bg=Colors.WHITE)
+        scrollable_frame = tk.Frame(canvas, bg=Colors.WHITE)
         
         # 设置初始宽度，确保方框从一开始就有正确的宽度
         scrollable_frame.config(width=self._cached_width)
@@ -259,7 +227,7 @@ class SaveAnalyzer:
         self.window.after(100, update_canvas_width)
         
         # 右侧1/3区域：显示统计面板（不可滚动）
-        right_frame = tk.Frame(main_paned, bg="white")
+        right_frame = tk.Frame(main_paned, bg=Colors.WHITE)
         main_paned.add(right_frame, width=400, minsize=200)
         self._right_frame = right_frame
         
@@ -295,7 +263,7 @@ class SaveAnalyzer:
         self.create_statistics_panel(right_frame)
         
         # 创建查看存档文件按钮（放在右侧面板底部）
-        button_frame = tk.Frame(right_frame, bg="white")
+        button_frame = tk.Frame(right_frame, bg=Colors.WHITE)
         button_frame.pack(side="bottom", fill="x", pady=(0, 10))
         self.view_file_button = ttk.Button(button_frame, text=self.t("view_save_file"), 
                                            command=self.show_save_file_viewer)
@@ -366,6 +334,46 @@ class SaveAnalyzer:
         if hasattr(self, 'view_file_button'):
             self.view_file_button.config(text=self.t("view_save_file"))
         
+        # 更新所有 section 标题和按钮文本（语言切换时）
+        for key, widget_info in list(self._section_title_widgets.items()):
+            title_label = widget_info.get('title_label')
+            button = widget_info.get('button')
+            title_key = widget_info.get('title_key')
+            
+            # 更新标题文本
+            if title_label and title_label.winfo_exists() and title_key:
+                try:
+                    title_label.config(text=self.t(title_key))
+                except:
+                    pass  # 如果翻译键不存在，忽略错误
+            
+            # 更新按钮文本
+            if button and button.winfo_exists() and widget_info.get('button_text_key'):
+                try:
+                    button.config(text=self.t(widget_info['button_text_key']))
+                except:
+                    pass  # 如果翻译键不存在，忽略错误
+        
+        # 更新统计面板中的标签文本（语言切换时）
+        if hasattr(self, '_stats_widgets'):
+            mp_label_title = self._stats_widgets.get('mp_label_title')
+            if mp_label_title and mp_label_title.winfo_exists():
+                try:
+                    mp_label_title.config(text=self.t("total_mp"))
+                except:
+                    pass
+        
+        # 更新所有提示标签文本（语言切换时）
+        if hasattr(self, '_hint_labels'):
+            for hint_info in self._hint_labels:
+                label = hint_info.get('label')
+                text_key = hint_info.get('text_key')
+                if label and label.winfo_exists() and text_key:
+                    try:
+                        label.config(text=self.t(text_key))
+                    except:
+                        pass
+        
         # 重新加载存档
         self.save_data = self.load_save_file()
         
@@ -414,7 +422,7 @@ class SaveAnalyzer:
     def create_statistics_panel(self, parent):
         """创建统计面板（贴纸环形图、MP大字、判定小字）"""
         # 使用原生 tkinter 创建主容器
-        stats_container = tk.Frame(parent, bg="white")
+        stats_container = tk.Frame(parent, bg=Colors.WHITE)
         stats_container.pack(fill="both", expand=True, padx=10, pady=10)
         
         # 存储容器引用以便更新
@@ -432,7 +440,7 @@ class SaveAnalyzer:
             stats_container,
             text=self.t("no_save_data"),
             font=get_cjk_font(12),
-            bg="white"
+            bg=Colors.WHITE
         )
         placeholder.pack(pady=50)
     
@@ -554,7 +562,7 @@ class SaveAnalyzer:
         bad = judge_counts.get("bad", 0)
         
         # 1. 贴纸统计环形图（使用 Canvas 绘制，改善抗锯齿）
-        sticker_frame = tk.Frame(parent, bg="white")
+        sticker_frame = tk.Frame(parent, bg=Colors.WHITE)
         sticker_frame.pack(pady=(0, 20))
         
         # 创建 Canvas 用于绘制环形图
@@ -563,7 +571,7 @@ class SaveAnalyzer:
             sticker_frame,
             width=canvas_size,
             height=canvas_size,
-            bg="white",
+            bg=Colors.WHITE,
             highlightthickness=0
         )
         sticker_canvas.pack()
@@ -695,7 +703,7 @@ class SaveAnalyzer:
         )
         
         # 2. 总MP收集量（大字显示）
-        mp_frame = tk.Frame(parent, bg="white")
+        mp_frame = tk.Frame(parent, bg=Colors.WHITE)
         mp_frame.pack(pady=(0, 15))
         
         mp_label_title = tk.Label(
@@ -703,7 +711,7 @@ class SaveAnalyzer:
             text=self.t("total_mp"),
             font=get_cjk_font(12),
             fg="#666666",
-            bg="white"
+            bg=Colors.WHITE
         )
         mp_label_title.pack()
         
@@ -712,19 +720,19 @@ class SaveAnalyzer:
             text=f"{whole_total_mp:,}",
             font=get_cjk_font(32, "bold"),
             fg="#2196F3",
-            bg="white"
+            bg=Colors.WHITE
         )
         mp_label_value.pack()
         
         # 3. 判定统计（一行显示）
-        judge_frame = tk.Frame(parent, bg="white")
+        judge_frame = tk.Frame(parent, bg=Colors.WHITE)
         judge_frame.pack(pady=(10, 0))
         
         # 创建一行文本，包含三个判定（使用不同颜色）
         judge_canvas = tk.Canvas(
             judge_frame,
             height=25,
-            bg="white",
+            bg=Colors.WHITE,
             highlightthickness=0
         )
         judge_canvas.pack()
@@ -802,7 +810,7 @@ class SaveAnalyzer:
                 decoded_content = urllib.parse.unquote(encoded_content)
                 
                 # 根据内容决定显示方式和颜色
-                neo_frame = tk.Frame(parent, bg="white")
+                neo_frame = tk.Frame(parent, bg=Colors.WHITE)
                 neo_frame.pack(pady=(20, 0))
                 
                 # 检查是否是特殊内容
@@ -824,11 +832,16 @@ class SaveAnalyzer:
                     text=neo_text,
                     font=get_cjk_font(14),
                     fg=text_color,
-                    bg="white",
+                    bg=Colors.WHITE,
                     wraplength=200  # 限制宽度以便换行
                 )
                 neo_label.pack()
                 neo_original_text = neo_text  # 保存原始文本用于乱码效果
+                
+                # 如果满足狂信徒线条件，将NEO标签颜色改为深红色
+                if is_zealot_route:
+                    dark_red_color = "#8b0000"
+                    neo_label.config(fg=dark_red_color)
                 
             except Exception as e:
                 # 如果读取失败，忽略错误
@@ -839,6 +852,9 @@ class SaveAnalyzer:
             # 保存需要显示乱码的widget和原始文本
             self._gibberish_widgets = []
             self._original_texts = {}
+            
+            # 狂信徒线使用深红色文字
+            dark_red_color = "#8b0000"
             
             # 保存Canvas文字（需要保存Canvas对象、文字ID、位置和样式信息）
             # 获取所有文字ID（按创建顺序）
@@ -852,8 +868,9 @@ class SaveAnalyzer:
                     'x': center_x,
                     'y': center_y - 20,
                     'font': get_cjk_font(12, "bold"),
-                    'fill': "#333333",
-                    'anchor': 'center'
+                    'fill': dark_red_color,
+                    'anchor': 'center',
+                    'tag': 'title_text'
                 })
                 self._original_texts[len(self._gibberish_widgets) - 1] = self.t('stickers_statistics')
                 
@@ -865,8 +882,9 @@ class SaveAnalyzer:
                     'x': center_x,
                     'y': center_y + 2,
                     'font': get_cjk_font(20, "bold"),
-                    'fill': "#333333",
-                    'anchor': 'center'
+                    'fill': dark_red_color,
+                    'anchor': 'center',
+                    'tag': 'percent_text'
                 })
                 self._original_texts[len(self._gibberish_widgets) - 1] = f"{stickers_percent:.1f}%"
                 
@@ -878,8 +896,9 @@ class SaveAnalyzer:
                     'x': center_x,
                     'y': center_y + 22,
                     'font': get_cjk_font(11),
-                    'fill': "#666666",
-                    'anchor': 'center'
+                    'fill': dark_red_color,
+                    'anchor': 'center',
+                    'tag': 'count_text'
                 })
                 self._original_texts[len(self._gibberish_widgets) - 1] = f"{collected_stickers}/{total_stickers}"
             
@@ -1199,6 +1218,33 @@ class SaveAnalyzer:
             # 重新初始化乱码相关变量
             self._gibberish_widgets = []
             self._original_texts = {}
+        else:
+            # 不满足狂信徒线条件时，停止乱码效果并清除相关变量
+            if hasattr(self, '_gibberish_update_job') and self._gibberish_update_job is not None:
+                try:
+                    self.window.after_cancel(self._gibberish_update_job)
+                except:
+                    pass
+                self._gibberish_update_job = None
+            
+            # 清理乱码效果创建的canvas文字（在清除变量之前）
+            if hasattr(self, '_gibberish_widgets') and self._gibberish_widgets:
+                for widget_info in self._gibberish_widgets:
+                    try:
+                        if widget_info['type'] == 'canvas_text':
+                            canvas = widget_info.get('canvas')
+                            text_id = widget_info.get('text_id')
+                            if canvas and text_id:
+                                canvas.delete(text_id)
+                    except:
+                        pass
+            
+            self._gibberish_widgets = []
+            self._original_texts = {}
+        
+        if is_zealot_route:
+            # 狂信徒线使用深红色文字
+            dark_red_color = "#8b0000"
             
             # 保存Canvas文字
             all_text_ids = [item for item in sticker_canvas.find_all() if sticker_canvas.type(item) == 'text']
@@ -1210,8 +1256,9 @@ class SaveAnalyzer:
                     'x': center_x,
                     'y': center_y - 20,
                     'font': get_cjk_font(12, "bold"),
-                    'fill': "#333333",
-                    'anchor': 'center'
+                    'fill': dark_red_color,
+                    'anchor': 'center',
+                    'tag': 'title_text'
                 })
                 self._original_texts[len(self._gibberish_widgets) - 1] = self.t('stickers_statistics')
                 
@@ -1222,8 +1269,9 @@ class SaveAnalyzer:
                     'x': center_x,
                     'y': center_y + 2,
                     'font': get_cjk_font(20, "bold"),
-                    'fill': "#333333",
-                    'anchor': 'center'
+                    'fill': dark_red_color,
+                    'anchor': 'center',
+                    'tag': 'percent_text'
                 })
                 self._original_texts[len(self._gibberish_widgets) - 1] = f"{stickers_percent:.1f}%"
                 
@@ -1234,8 +1282,9 @@ class SaveAnalyzer:
                     'x': center_x,
                     'y': center_y + 22,
                     'font': get_cjk_font(11),
-                    'fill': "#666666",
-                    'anchor': 'center'
+                    'fill': dark_red_color,
+                    'anchor': 'center',
+                    'tag': 'count_text'
                 })
                 self._original_texts[len(self._gibberish_widgets) - 1] = f"{collected_stickers}/{total_stickers}"
             
@@ -1333,20 +1382,25 @@ class SaveAnalyzer:
                         canvas.delete(widget_info['text_id'])
                     except:
                         pass
-                    # 创建新文字
+                    # 使用保存的tag（以便清理时能被正确删除）
+                    text_tag = widget_info.get('tag', 'gibberish_text')
+                    
+                    # 创建新文字（带tags）
                     new_text_id = canvas.create_text(
                         widget_info['x'],
                         widget_info['y'],
                         text=gibberish_text,
                         font=widget_info['font'],
                         fill=widget_info['fill'],
-                        anchor=widget_info['anchor']
+                        anchor=widget_info['anchor'],
+                        tags=text_tag
                     )
                     widget_info['text_id'] = new_text_id
                 
                 elif widget_info['type'] == 'tk_label':
-                    # 更新Label文字
-                    widget_info['widget'].config(text=gibberish_text)
+                    # 更新Label文字，在狂信徒线条件下使用深红色
+                    dark_red_color = "#8b0000"
+                    widget_info['widget'].config(text=gibberish_text, fg=dark_red_color)
                 
                 elif widget_info['type'] == 'judge_canvas':
                     # 重新绘制判定统计Canvas
@@ -1365,13 +1419,16 @@ class SaveAnalyzer:
                     center_x = widget_info['canvas_width'] // 2
                     current_x = center_x - text_width // 2
                     
+                    # 狂信徒线使用深红色文字
+                    dark_red_color = "#8b0000"
+                    
                     # 重新绘制文本
                     perfect_width = font_obj.measure(perfect_text)
                     canvas.create_text(
                         current_x + perfect_width // 2, 12,
                         text=perfect_text,
                         font=get_cjk_font(10),
-                        fill="#CC6DAE",
+                        fill=dark_red_color,
                         anchor="center"
                     )
                     current_x += perfect_width + font_obj.measure(" - ")
@@ -1381,7 +1438,7 @@ class SaveAnalyzer:
                         current_x + good_width // 2, 12,
                         text=good_text,
                         font=get_cjk_font(10),
-                        fill="#F5CE88",
+                        fill=dark_red_color,
                         anchor="center"
                     )
                     current_x += good_width + font_obj.measure(" - ")
@@ -1391,7 +1448,7 @@ class SaveAnalyzer:
                         current_x + bad_width // 2, 12,
                         text=bad_text,
                         font=get_cjk_font(10),
-                        fill="#6DB7AB",
+                        fill=dark_red_color,
                         anchor="center"
                     )
                     
@@ -1399,8 +1456,8 @@ class SaveAnalyzer:
                     sep_width = font_obj.measure(" - ")
                     sep1_x = center_x - text_width // 2 + perfect_width
                     sep2_x = sep1_x + sep_width + good_width
-                    canvas.create_text(sep1_x + sep_width // 2, 12, text=" - ", font=get_cjk_font(10), fill="#666666", anchor="center")
-                    canvas.create_text(sep2_x + sep_width // 2, 12, text=" - ", font=get_cjk_font(10), fill="#666666", anchor="center")
+                    canvas.create_text(sep1_x + sep_width // 2, 12, text=" - ", font=get_cjk_font(10), fill=dark_red_color, anchor="center")
+                    canvas.create_text(sep2_x + sep_width // 2, 12, text=" - ", font=get_cjk_font(10), fill=dark_red_color, anchor="center")
             except Exception as e:
                 # 如果widget已被销毁，忽略错误
                 pass
@@ -1408,9 +1465,25 @@ class SaveAnalyzer:
         # 150ms后再次更新
         self._gibberish_update_job = self.window.after(150, self._update_gibberish_texts)
     
-    def create_section(self, parent, title):
-        """创建带标题的分区"""
-        section_frame = tk.Frame(parent, bg="white", relief="ridge", borderwidth=2)
+    def create_section(self, parent, title, bg_color=None, text_color=None, title_key=None):
+        """创建带标题的分区
+        
+        Args:
+            parent: 父容器
+            title: 标题文本（已翻译）
+            bg_color: 背景颜色（可选，默认为白色）
+            text_color: 文字颜色（可选，默认为黑色）
+            title_key: 标题的翻译键（可选，用于语言切换时更新）
+        
+        Returns:
+            content_frame - 用于添加内容的frame
+        """
+        if bg_color is None:
+            bg_color = Colors.WHITE
+        if text_color is None:
+            text_color = "#000000"
+        
+        section_frame = tk.Frame(parent, bg=bg_color, relief="ridge", borderwidth=2)
         section_frame.pack(fill="x", padx=10, pady=5)
         
         # 使用缓存的宽度计算标题换行长度
@@ -1418,21 +1491,43 @@ class SaveAnalyzer:
             return int(self._cached_width * 0.9)
         
         title_label = ttk.Label(section_frame, text=title, font=get_cjk_font(12, "bold"), 
-                               wraplength=get_title_wraplength(), justify="left")
+                               wraplength=get_title_wraplength(), justify="left",
+                               foreground=text_color)
         title_label.pack(anchor="w", padx=5, pady=5)
         
-        content_frame = tk.Frame(section_frame, bg="white")
+        content_frame = tk.Frame(section_frame, bg=bg_color)
         content_frame.pack(fill="x", padx=10, pady=5)
+        
+        # 存储section_frame引用以便后续访问
+        content_frame._section_frame = section_frame
+        
+        # 保存标题的引用，用于语言切换
+        # 使用 title_key 作为 key（如果提供），否则使用 title
+        key = title_key if title_key else title
+        self._section_title_widgets[key] = {
+            'title_label': title_label,
+            'button': None,
+            'button_text_key': None,
+            'title_key': title_key
+        }
         
         return content_frame
     
-    def create_section_with_button(self, parent, title, button_text, button_command=None):
-        """创建带标题和按钮的分区"""
-        section_frame = tk.Frame(parent, bg="white", relief="ridge", borderwidth=2)
+    def create_section_with_button(self, parent, title, button_text, button_command=None, title_key=None):
+        """创建带标题和按钮的分区
+        
+        Args:
+            parent: 父容器
+            title: 标题文本（已翻译）
+            button_text: 按钮文本（已翻译）
+            button_command: 按钮命令
+            title_key: 标题的翻译键（可选，用于语言切换时更新）
+        """
+        section_frame = tk.Frame(parent, bg=Colors.WHITE, relief="ridge", borderwidth=2)
         section_frame.pack(fill="x", padx=10, pady=5)
         
         # 标题和按钮在同一行
-        header_frame = tk.Frame(section_frame, bg="white")
+        header_frame = tk.Frame(section_frame, bg=Colors.WHITE)
         header_frame.pack(fill="x", padx=5, pady=5)
         
         # 使用缓存的宽度计算标题换行长度
@@ -1443,16 +1538,27 @@ class SaveAnalyzer:
                                wraplength=get_title_wraplength(), justify="left")
         title_label.pack(side="left", padx=5)
         
+        button = None
         if button_text:
             button = ttk.Button(header_frame, text=button_text, command=button_command if button_command else lambda: None)
             button.pack(side="right", padx=5)
         
-        content_frame = tk.Frame(section_frame, bg="white")
+        content_frame = tk.Frame(section_frame, bg=Colors.WHITE)
         content_frame.pack(fill="x", padx=10, pady=5)
+        
+        # 保存标题和按钮的引用，用于语言切换
+        # 使用 title_key 作为 key（如果提供），否则使用 title
+        key = title_key if title_key else title
+        self._section_title_widgets[key] = {
+            'title_label': title_label,
+            'button': button,
+            'button_text_key': 'view_requirements' if button_text else None,
+            'title_key': title_key
+        }
         
         return content_frame
     
-    def add_info_line(self, parent, label, value, var_name=None, widget_key=None):
+    def add_info_line(self, parent, label, value, var_name=None, widget_key=None, text_color=None):
         """添加信息行
         
         Args:
@@ -1461,6 +1567,7 @@ class SaveAnalyzer:
             value: 值
             var_name: 变量名（可选）
             widget_key: widget 标识键，用于增量更新（可选）
+            text_color: 文字颜色（可选，如果未提供则从父容器背景色推断）
         
         Returns:
             value_widget: 值 widget 的引用
@@ -1479,11 +1586,16 @@ class SaveAnalyzer:
                     label_widget.config(text=label + ":")
                 return value_widget
         
+        # 如果没有指定文字颜色，使用默认颜色
+        # 注意：狂信徒区域现在使用白色背景和深红色文字，已通过text_color参数显式传递
+        
         # 创建新的 widget
-        line_frame = tk.Frame(parent, bg="white")
+        parent_bg = parent.cget("bg") if hasattr(parent, "cget") else Colors.WHITE
+        line_frame = tk.Frame(parent, bg=parent_bg)
         line_frame.pack(fill="x", padx=5, pady=2)
         
-        label_widget = ttk.Label(line_frame, text=label + ":", font=get_cjk_font(10), wraplength=200)
+        label_widget = ttk.Label(line_frame, text=label + ":", font=get_cjk_font(10), 
+                                wraplength=200, foreground=text_color if text_color else None)
         label_widget.pack(side="left", padx=5)
         
         # 如果有变量名，在冒号前面显示灰色的变量名
@@ -1505,7 +1617,9 @@ class SaveAnalyzer:
         
         wraplength = int(self._cached_width * 0.7)
         
-        value_widget = ttk.Label(line_frame, text=str(value), font=get_cjk_font(10), wraplength=wraplength, justify="left")
+        value_widget = ttk.Label(line_frame, text=str(value), font=get_cjk_font(10), 
+                                wraplength=wraplength, justify="left",
+                                foreground=text_color if text_color else None)
         value_widget.pack(side="left", padx=5, fill="x", expand=True)
         
         # 如果提供了 widget_key，存储到映射中
@@ -1521,7 +1635,7 @@ class SaveAnalyzer:
     
     def add_list_info(self, parent, label, items):
         """添加列表信息，显示完整列表"""
-        line_frame = tk.Frame(parent, bg="white")
+        line_frame = tk.Frame(parent, bg=Colors.WHITE)
         line_frame.pack(fill="x", padx=5, pady=2)
         
         label_widget = ttk.Label(line_frame, text=label + ":", font=get_cjk_font(10), wraplength=200)
@@ -1541,20 +1655,20 @@ class SaveAnalyzer:
     
     def add_list_info_horizontal(self, parent, label, items):
         """添加列表信息，横向一行展示（为之后修改功能留接口）"""
-        line_frame = tk.Frame(parent, bg="white")
+        line_frame = tk.Frame(parent, bg=Colors.WHITE)
         line_frame.pack(fill="x", padx=5, pady=2)
         
         label_widget = ttk.Label(line_frame, text=label + ":", font=get_cjk_font(10))
         label_widget.pack(side="left", padx=5)
         
         # 创建可滚动的横向显示区域
-        canvas_frame = tk.Frame(line_frame, bg="white")
+        canvas_frame = tk.Frame(line_frame, bg=Colors.WHITE)
         canvas_frame.pack(side="left", fill="x", expand=True, padx=5)
         
         # 使用Canvas实现横向滚动
-        canvas = tk.Canvas(canvas_frame, height=25, bg="white", highlightthickness=0)
+        canvas = tk.Canvas(canvas_frame, height=25, bg=Colors.WHITE, highlightthickness=0)
         scrollbar_h = Scrollbar(canvas_frame, orient="horizontal", command=canvas.xview)
-        scrollable_frame = tk.Frame(canvas, bg="white")
+        scrollable_frame = tk.Frame(canvas, bg=Colors.WHITE)
         
         scrollable_frame.bind(
             "<Configure>",
@@ -1583,7 +1697,7 @@ class SaveAnalyzer:
         
         return scrollable_frame
     
-    def add_info_line_with_tooltip(self, parent, label, value, tooltip_text, var_name=None, widget_key=None):
+    def add_info_line_with_tooltip(self, parent, label, value, tooltip_text, var_name=None, widget_key=None, text_color=None):
         """添加带可点击问号的信息行
         
         Args:
@@ -1593,6 +1707,7 @@ class SaveAnalyzer:
             tooltip_text: 提示文本
             var_name: 变量名（可选）
             widget_key: widget 标识键，用于增量更新（可选）
+            text_color: 文字颜色（可选，如果未提供则从父容器背景色推断）
         
         Returns:
             value_widget: 值 widget 的引用
@@ -1615,14 +1730,19 @@ class SaveAnalyzer:
                     tooltip_text_widget.config(text=tooltip_text)
                 return value_widget
         
+        # 如果没有指定文字颜色，使用默认颜色
+        # 注意：狂信徒区域现在使用白色背景和深红色文字，已通过text_color参数显式传递
+        
         # 创建一个容器来包含主行和提示信息
-        container = tk.Frame(parent, bg="white")
+        parent_bg = parent.cget("bg") if hasattr(parent, "cget") else Colors.WHITE
+        container = tk.Frame(parent, bg=parent_bg)
         container.pack(fill="x", padx=5, pady=2)
         
-        line_frame = tk.Frame(container, bg="white")
+        line_frame = tk.Frame(container, bg=parent_bg)
         line_frame.pack(fill="x")
         
-        label_widget = ttk.Label(line_frame, text=label + ":", font=get_cjk_font(10), wraplength=200)
+        label_widget = ttk.Label(line_frame, text=label + ":", font=get_cjk_font(10), 
+                             wraplength=200, foreground=text_color if text_color else None)
         label_widget.pack(side="left", padx=5)
         
         # 如果有变量名，在冒号前面显示灰色的变量名
@@ -1646,16 +1766,17 @@ class SaveAnalyzer:
         wraplength = int(self._cached_width * 0.7)
         
         value_widget = ttk.Label(line_frame, text=str(value), font=get_cjk_font(10), 
-                                wraplength=wraplength, justify="left")
+                                wraplength=wraplength, justify="left",
+                                foreground=text_color if text_color else None)
         value_widget.pack(side="left", padx=5, fill="x", expand=True)
         
         # 创建可点击的信息符号
         tooltip_label = ttk.Label(line_frame, text="ℹ", font=get_cjk_font(10, "bold"), 
-                                  foreground="blue", cursor="hand2")
+                                  foreground=text_color if text_color else "blue", cursor="hand2")
         tooltip_label.pack(side="left", padx=2)
         
         # 提示信息标签（初始隐藏）
-        tooltip_frame = tk.Frame(container, bg="white")
+        tooltip_frame = tk.Frame(container, bg=parent_bg)
         tooltip_wraplength = int(self._cached_width * 0.85)
         
         tooltip_text_widget = ttk.Label(tooltip_frame, text=tooltip_text, 
@@ -1706,27 +1827,65 @@ class SaveAnalyzer:
             return
         
         # 首次加载：完整创建流程
-        # 1. 角色信息
+        # 获取memory数据（在多个地方使用）
         memory = save_data.get("memory", {})
-        character_section = self.create_section(parent, self.t("character_info"))
-        self._section_map["character_info"] = character_section
         
-        character_name = memory.get("name", self.t("not_set"))
-        self.add_info_line(character_section, self.t("character_name"), character_name, "memory.name", "memory.name")
+        # 检查狂信徒线条件
+        kill = save_data.get("kill", None)
+        killed = save_data.get("killed", None)
+        kill_start = save_data.get("killStart", 0)
         
-        seibetu = memory.get("seibetu", 0)
-        if seibetu == 1:
-            gender_text = self.t("gender_male")
-        elif seibetu == 2:
-            gender_text = self.t("gender_female")
-        else:
-            gender_text = self.t("not_set")
-        self.add_info_line(character_section, self.t("character_gender"), gender_text, "memory.seibetu", "memory.seibetu")
+        is_zealot_route = (
+            (kill is not None and kill == 1) or
+            (killed is not None and killed == 1) or
+            (kill_start is not None and kill_start > 0)
+        )
         
-        hutanari = memory.get("hutanari", 0)
-        self.add_info_line(character_section, self.t("hutanari"), hutanari, "memory.hutanari", "memory.hutanari")
+        # 如果满足狂信徒线条件，先创建狂信徒section（移到最顶端）
+        if is_zealot_route:
+            # 使用白色背景和深红色文字
+            dark_red_text = "#8b0000"  # 深红色文字
+            zealot_section = self.create_section(parent, self.t("zealot_related"), 
+                                                bg_color=Colors.WHITE, text_color=dark_red_text,
+                                                title_key="zealot_related")
+            self._section_map["zealot_related"] = zealot_section
+            
+            neo = save_data.get("NEO", 0)
+            self.add_info_line_with_tooltip(zealot_section, self.t("neo_value"), neo, 
+                                           self.t("neo_value_tooltip"), "NEO", "NEO", text_color=dark_red_text)
+            
+            # 是否遭受拉米亚的诅咒
+            lamia_noroi = save_data.get("Lamia_noroi", 0)
+            self.add_info_line(zealot_section, self.t("lamia_curse"), lamia_noroi, "Lamia_noroi", "Lamia_noroi", text_color=dark_red_text)
+            
+            # 创伤值
+            trauma = save_data.get("trauma", 0)
+            self.add_info_line(zealot_section, self.t("trauma_value"), trauma, "trauma", "trauma", text_color=dark_red_text)
+            
+            # killWarning - 狂信徒警告
+            kill_warning = save_data.get("killWarning", 0)
+            self.add_info_line(zealot_section, self.t("kill_warning"), kill_warning, "killWarning", "killWarning", text_color=dark_red_text)
+            
+            # killed - 是否正在进行狂信徒线
+            killed = save_data.get("killed", None)
+            if killed is None:
+                killed_display = self.t("variable_not_exist")
+            else:
+                killed_display = killed
+            self.add_info_line_with_tooltip(zealot_section, self.t("killed"), killed_display,
+                                           self.t("killed_tooltip"), "killed", "killed", text_color=dark_red_text)
+            
+            # kill - 狂信徒线完成数
+            kill = save_data.get("kill", 0)
+            self.add_info_line_with_tooltip(zealot_section, self.t("kill_count"), kill,
+                                           self.t("kill_count_tooltip"), "kill", "kill", text_color=dark_red_text)
+            
+            # killStart - 在狂信徒线中选择新开一局游戏的次数
+            kill_start = save_data.get("killStart", 0)
+            self.add_info_line_with_tooltip(zealot_section, self.t("kill_start"), kill_start,
+                                           self.t("kill_start_tooltip"), "killStart", "killStart", text_color=dark_red_text)
         
-        # 2. 结局统计 + "查看达成条件"按钮
+        # 1. 结局统计 + "查看达成条件"按钮
         endings = set(save_data.get("endings", []))
         collected_endings = set(save_data.get("collectedEndings", []))
         missing_endings = sorted(endings - collected_endings, key=lambda x: int(x) if x.isdigit() else 999)
@@ -1735,7 +1894,8 @@ class SaveAnalyzer:
             parent, 
             self.t("endings_statistics"), 
             self.t("view_requirements"),
-            button_command=lambda: self.show_endings_requirements(save_data, endings, collected_endings, missing_endings)
+            button_command=lambda: self.show_endings_requirements(save_data, endings, collected_endings, missing_endings),
+            title_key="endings_statistics"
         )
         self._section_map["endings_statistics"] = endings_section
         
@@ -1761,7 +1921,8 @@ class SaveAnalyzer:
             parent, 
             self.t("stickers_statistics"), 
             self.t("view_requirements"),
-            button_command=lambda: None
+            button_command=lambda: None,
+            title_key="stickers_statistics"
         )
         self._section_map["stickers_statistics"] = stickers_section
         
@@ -1790,7 +1951,8 @@ class SaveAnalyzer:
         # 4. 角色统计
         characters_section = self.create_section(
             parent, 
-            self.t("characters_statistics")
+            self.t("characters_statistics"),
+            title_key="characters_statistics"
         )
         self._section_map["characters_statistics"] = characters_section
         
@@ -1825,7 +1987,8 @@ class SaveAnalyzer:
         # 5. 额外内容统计
         omakes_section = self.create_section(
             parent, 
-            self.t("omakes_statistics")
+            self.t("omakes_statistics"),
+            title_key="omakes_statistics"
         )
         self._section_map["omakes_statistics"] = omakes_section
         
@@ -1860,7 +2023,7 @@ class SaveAnalyzer:
         self.add_info_line(omakes_section, self.t("ng_scene_count"), ng_scene_count, "ngScene", "ngScene.count")
         
         # 6. 游戏统计
-        stats_section = self.create_section(parent, self.t("game_statistics"))
+        stats_section = self.create_section(parent, self.t("game_statistics"), title_key="game_statistics")
         self._section_map["game_statistics"] = stats_section
         
         whole_total_mp = save_data.get("wholeTotalMP", 0)
@@ -1885,47 +2048,68 @@ class SaveAnalyzer:
         self.add_info_line_with_tooltip(stats_section, self.t("loop_record"), loop_record,
                                        self.t("loop_record_tooltip"), "loopRecord", "loopRecord")
         
-        # 6.5. 狂信徒相关
-        zealot_section = self.create_section(parent, self.t("zealot_related"))
-        self._section_map["zealot_related"] = zealot_section
+        # 如果不满足狂信徒线条件，在这里创建狂信徒相关section（正常位置）
+        if not is_zealot_route:
+            # 6.5. 狂信徒相关
+            zealot_section = self.create_section(parent, self.t("zealot_related"), title_key="zealot_related")
+            self._section_map["zealot_related"] = zealot_section
+            
+            neo = save_data.get("NEO", 0)
+            self.add_info_line_with_tooltip(zealot_section, self.t("neo_value"), neo, 
+                                           self.t("neo_value_tooltip"), "NEO", "NEO")
+            
+            # 是否遭受拉米亚的诅咒
+            lamia_noroi = save_data.get("Lamia_noroi", 0)
+            self.add_info_line(zealot_section, self.t("lamia_curse"), lamia_noroi, "Lamia_noroi", "Lamia_noroi")
+            
+            # 创伤值
+            trauma = save_data.get("trauma", 0)
+            self.add_info_line(zealot_section, self.t("trauma_value"), trauma, "trauma", "trauma")
+            
+            # killWarning - 狂信徒警告
+            kill_warning = save_data.get("killWarning", 0)
+            self.add_info_line(zealot_section, self.t("kill_warning"), kill_warning, "killWarning", "killWarning")
+            
+            # killed - 是否正在进行狂信徒线
+            killed = save_data.get("killed", None)
+            if killed is None:
+                killed_display = self.t("variable_not_exist")
+            else:
+                killed_display = killed
+            self.add_info_line_with_tooltip(zealot_section, self.t("killed"), killed_display,
+                                           self.t("killed_tooltip"), "killed", "killed")
+            
+            # kill - 狂信徒线完成数
+            kill = save_data.get("kill", 0)
+            self.add_info_line_with_tooltip(zealot_section, self.t("kill_count"), kill,
+                                           self.t("kill_count_tooltip"), "kill", "kill")
+            
+            # killStart - 在狂信徒线中选择新开一局游戏的次数
+            kill_start = save_data.get("killStart", 0)
+            self.add_info_line_with_tooltip(zealot_section, self.t("kill_start"), kill_start,
+                                           self.t("kill_start_tooltip"), "killStart", "killStart")
         
-        neo = save_data.get("NEO", 0)
-        self.add_info_line_with_tooltip(zealot_section, self.t("neo_value"), neo, 
-                                       self.t("neo_value_tooltip"), "NEO", "NEO")
+        # 7. 角色信息
+        character_section = self.create_section(parent, self.t("character_info"), title_key="character_info")
+        self._section_map["character_info"] = character_section
         
-        # 是否遭受拉米亚的诅咒
-        lamia_noroi = save_data.get("Lamia_noroi", 0)
-        self.add_info_line(zealot_section, self.t("lamia_curse"), lamia_noroi, "Lamia_noroi", "Lamia_noroi")
+        character_name = memory.get("name", self.t("not_set"))
+        self.add_info_line(character_section, self.t("character_name"), character_name, "memory.name", "memory.name")
         
-        # 创伤值
-        trauma = save_data.get("trauma", 0)
-        self.add_info_line(zealot_section, self.t("trauma_value"), trauma, "trauma", "trauma")
-        
-        # killWarning - 狂信徒警告
-        kill_warning = save_data.get("killWarning", 0)
-        self.add_info_line(zealot_section, self.t("kill_warning"), kill_warning, "killWarning", "killWarning")
-        
-        # killed - 是否正在进行狂信徒线
-        killed = save_data.get("killed", None)
-        if killed is None:
-            killed_display = self.t("variable_not_exist")
+        seibetu = memory.get("seibetu", 0)
+        if seibetu == 1:
+            gender_text = self.t("gender_male")
+        elif seibetu == 2:
+            gender_text = self.t("gender_female")
         else:
-            killed_display = killed
-        self.add_info_line_with_tooltip(zealot_section, self.t("killed"), killed_display,
-                                       self.t("killed_tooltip"), "killed", "killed")
+            gender_text = self.t("not_set")
+        self.add_info_line(character_section, self.t("character_gender"), gender_text, "memory.seibetu", "memory.seibetu")
         
-        # kill - 狂信徒线完成数
-        kill = save_data.get("kill", 0)
-        self.add_info_line_with_tooltip(zealot_section, self.t("kill_count"), kill,
-                                       self.t("kill_count_tooltip"), "kill", "kill")
+        hutanari = memory.get("hutanari", 0)
+        self.add_info_line(character_section, self.t("hutanari"), hutanari, "memory.hutanari", "memory.hutanari")
         
-        # killStart - 在狂信徒线中选择新开一局游戏的次数
-        kill_start = save_data.get("killStart", 0)
-        self.add_info_line_with_tooltip(zealot_section, self.t("kill_start"), kill_start,
-                                       self.t("kill_start_tooltip"), "killStart", "killStart")
-        
-        # 7. 其他信息
-        other_section = self.create_section(parent, self.t("other_info"))
+        # 8. 其他信息
+        other_section = self.create_section(parent, self.t("other_info"), title_key="other_info")
         self._section_map["other_info"] = other_section
         
         # 存档列表编号和相册页码（相册页码从0开始，显示时+1）
@@ -1959,6 +2143,12 @@ class SaveAnalyzer:
                               wraplength=int(self._cached_width * 0.85),
                               justify="left")
         hint_label.pack(anchor="w", padx=5, pady=(5, 0))
+        
+        # 保存提示标签的引用，用于语言切换
+        self._hint_labels.append({
+            'label': hint_label,
+            'text_key': 'other_info_hint'
+        })
         
         # 所有组件创建完成后，更新滚动区域并绑定滚轮事件
         def finalize_scrolling():
@@ -2272,7 +2462,7 @@ class SaveAnalyzer:
         main_frame.pack(fill="both", expand=True, padx=5, pady=5)
         
         # 添加提示文字
-        hint_frame = tk.Frame(main_frame, bg="white")
+        hint_frame = tk.Frame(main_frame, bg=Colors.WHITE)
         hint_frame.pack(fill="x", pady=(0, 10))
         hint_label = ttk.Label(hint_frame, text=self.t("viewer_hint_text"), 
                                font=get_cjk_font(9), 
@@ -2999,12 +3189,12 @@ class SaveAnalyzer:
         set_window_icon(requirements_window)
         
         # 创建主框架
-        main_frame = tk.Frame(requirements_window, bg="white")
+        main_frame = tk.Frame(requirements_window, bg=Colors.WHITE)
         main_frame.pack(fill="both", expand=True, padx=10, pady=10)
         
         # 创建滚动区域
-        canvas = tk.Canvas(main_frame, bg="white")
-        scrollable_frame = tk.Frame(canvas, bg="white")
+        canvas = tk.Canvas(main_frame, bg=Colors.WHITE)
+        scrollable_frame = tk.Frame(canvas, bg=Colors.WHITE)
         
         scrollbar = Scrollbar(main_frame, orient="vertical", command=canvas.yview)
         canvas.configure(yscrollcommand=scrollbar.set)
@@ -3060,7 +3250,7 @@ class SaveAnalyzer:
         # 显示所有结局
         for ending_id, condition_text in display_order:
             # 创建每个结局的框架
-            ending_frame = tk.Frame(scrollable_frame, bg="white", relief="ridge", borderwidth=1)
+            ending_frame = tk.Frame(scrollable_frame, bg=Colors.WHITE, relief="ridge", borderwidth=1)
             ending_frame.pack(fill="x", pady=5, padx=5)
             
             # 判断是否为未达成的结局

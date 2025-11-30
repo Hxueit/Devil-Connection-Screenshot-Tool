@@ -101,21 +101,19 @@ class GalleryWindow:
     def _create_placeholder(self, id_str: str, parent_tag: str):
         """创建加载中的占位符"""
         placeholder_group_id = dpg.add_group(parent=parent_tag, tag=f"placeholder_{id_str}")
-        # 占位符容器
         placeholder_id = dpg.add_text(
             "Loading...",
             parent=placeholder_group_id,
             tag=f"placeholder_text_{id_str}",
-            color=[200, 200, 200, 255]  # 浅灰色文字（深色主题）
+            color=[200, 200, 200, 255]
         )
         self.placeholders[id_str] = placeholder_id
         
-        # ID标签
         dpg.add_text(
             id_str,
             parent=placeholder_group_id,
             tag=f"placeholder_id_{id_str}",
-            color=[200, 200, 200, 255]  # 浅灰色文字（深色主题）
+            color=[200, 200, 200, 255]
         )
     
     def _create_empty_placeholder(self, parent_tag: str):
@@ -124,9 +122,9 @@ class GalleryWindow:
         dpg.add_text(
             self.i18n.t("not_available", default="N/A"),
             parent=empty_group_id,
-            color=[200, 200, 200, 255]  # 浅灰色文字（深色主题）
+            color=[200, 200, 200, 255]
         )
-        dpg.add_text("", parent=empty_group_id, color=[255, 255, 255, 0])  # 空白占位
+        dpg.add_text("", parent=empty_group_id, color=[255, 255, 255, 0])
     
     def _load_images_async(self, image_ids: List[str]):
         """异步加载所有图片"""
@@ -164,8 +162,6 @@ class GalleryWindow:
                     dpg.configure_item(placeholder_id, color=[255, 0, 0, 255])
                 return
             
-            # 转换为纹理
-            # image_data应该是numpy数组（RGBA, 0-1范围）
             if isinstance(image_data, np.ndarray):
                 texture_id = numpy_to_texture_id(image_data)
             else:
@@ -174,15 +170,11 @@ class GalleryWindow:
             if texture_id:
                 self.texture_cache[key] = texture_id
                 
-                # 更新UI：移除占位符，显示图片
                 placeholder_group = f"placeholder_{key}"
                 if dpg.does_item_exist(placeholder_group):
-                    # 获取父容器
                     parent_tag = dpg.get_item_parent(placeholder_group)
-                    # 删除占位符
                     dpg.delete_item(placeholder_group)
                     
-                    # 创建图片显示
                     if parent_tag:
                         image_group_id = dpg.add_group(parent=parent_tag, tag=f"image_group_{key}")
                         dpg.add_image(
@@ -196,7 +188,7 @@ class GalleryWindow:
                             key,
                             parent=image_group_id,
                             tag=f"image_id_{key}",
-                            color=[255, 255, 255, 255]  # 白色文字（深色主题）
+                            color=[255, 255, 255, 255]
                         )
         
         # 异步加载所有图片
@@ -209,7 +201,6 @@ class GalleryWindow:
     
     def close(self):
         """关闭窗口并清理资源"""
-        # 清理纹理
         for texture_id in self.texture_cache.values():
             if dpg.does_item_exist(texture_id):
                 try:
@@ -217,7 +208,6 @@ class GalleryWindow:
                 except:
                     pass
         
-        # 删除窗口
         if dpg.does_item_exist("gallery_window"):
             dpg.delete_item("gallery_window")
 

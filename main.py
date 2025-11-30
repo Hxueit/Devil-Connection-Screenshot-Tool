@@ -29,8 +29,6 @@ from toast import Toast
 from styles import get_cjk_font, get_parent_bg, init_styles, Colors, Debouncer
 
 # From the sky bereft of stars
-
-# Windows注册表支持，查找Steam路径使用
 if platform.system() == "Windows":
     try:
         import winreg
@@ -53,17 +51,14 @@ class SavTool:
         # 初始化统一样式（解决文字底色问题）
         init_styles(self.root)
 
-        # 创建菜单栏
         self.menubar = tk.Menu(root)
         root.config(menu=self.menubar)
         
-        # Directory 菜单
         self.directory_menu = tk.Menu(self.menubar, tearoff=0)
         self.menubar.add_cascade(label=self.t("directory_menu"), menu=self.directory_menu)
         self.directory_menu.add_command(label=self.t("browse_dir"), command=self.select_dir)
         self.directory_menu.add_command(label=self.t("auto_detect_steam"), command=self.auto_detect_steam)
         
-        # Language 菜单
         self.language_menu = tk.Menu(self.menubar, tearoff=0)
         self.menubar.add_cascade(label="Language", menu=self.language_menu)
         self.language_var = tk.StringVar(value=self.current_language)
@@ -74,55 +69,42 @@ class SavTool:
         self.language_menu.add_radiobutton(label="English", variable=self.language_var, 
                                           value="en_US", command=lambda: self.change_language("en_US"))
         
-        # Help 菜单
         help_menu = tk.Menu(self.menubar, tearoff=0)
         self.menubar.add_cascade(label="Help", menu=help_menu)
         help_menu.add_command(label="Help", command=self.show_help)
 
-        # 创建 Notebook (Tab 容器)
         self.notebook = ttk.Notebook(root)
         self.notebook.pack(fill="both", expand=True, padx=0, pady=0)
 
-        # Tab 1: 存档分析界面（默认显示）
         self.analyzer_frame = tk.Frame(self.notebook)
         self.notebook.add(self.analyzer_frame, text=self.t("save_analyzer_tab"))
         
-        # 在存档分析界面显示提示（如果还没有选择目录）
         self.analyzer_hint_label = tk.Label(self.analyzer_frame, text=self.t("select_dir_hint"), 
                                             fg="#D554BC", font=get_cjk_font(12))
         self.analyzer_hint_label.pack(pady=50)
         
-        # Tab 2: 截图管理界面
         self.screenshot_frame = tk.Frame(self.notebook)
         self.notebook.add(self.screenshot_frame, text=self.t("screenshot_management_tab"))
 
-        # Tab 3: 备份/还原界面
         self.backup_restore_frame = tk.Frame(self.notebook)
         self.notebook.add(self.backup_restore_frame, text=self.t("backup_restore_tab"))
         
-        # 备份/还原界面的提示标签
         self.backup_restore_hint_label = tk.Label(self.backup_restore_frame, text=self.t("select_dir_hint"), 
                                                   fg="#D554BC", font=get_cjk_font(12))
         self.backup_restore_hint_label.pack(pady=50)
 
-        # 初始化存档分析界面（延迟到选择目录后）
         self.save_analyzer = None
         
-        # 初始化备份/还原管理器（延迟到选择目录后）
         self.backup_restore = None
         
-        # 绑定 tab 切换事件，切换到存档分析页面时自动刷新
         self.notebook.bind("<<NotebookTabChanged>>", self.on_tab_changed)
         
-        # 绑定窗口关闭事件，清理监控
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
-        # 没有选择目录时的提示标签（在截图管理界面）
         self.hint_label = tk.Label(self.screenshot_frame, text=self.t("select_dir_hint"), 
                                    fg="#D554BC", font=get_cjk_font(10))
         self.hint_label.pack(pady=10)
         
-        # 成功检测到Steam路径标签（在截图管理界面）
         self.success_label = tk.Label(self.screenshot_frame, text="", 
                                       fg="#6DB8AC", font=get_cjk_font(10))
         self.success_label_timer = None  # 用于存储定时器ID
@@ -292,6 +274,8 @@ class SavTool:
         self.monitor_thread = None  # 监控线程
         self.monitor_running = False  # 监控运行标志
         self.active_toasts = []  # 活跃的toast列表
+        self.variable_change_chains = {}  # 变量变化链追踪 {变量名: {"chain": [值1, 值2, ...], "toast": toast实例}}
+        self.ab_initio_triggered = False  # AB INITIO是否已触发
         
         # 默认显示存档分析 tab（索引 0）
         self.notebook.select(0)
@@ -881,9 +865,6 @@ class SavTool:
     
     def _monitor_loop(self):
         """监控循环（在后台线程中运行）"""
-        # 记录上次检测到的文件修改时间
-        self._last_mtime = 0
-        
         while self.monitor_running:
             try:
                 self._check_file_changes()
@@ -895,18 +876,26 @@ class SavTool:
     
     def _check_file_changes(self):
         """检查文件是否有变动（通过比较真实文件和临时文件）"""
+        # 检查两个文件是否同时消失
+        save_file_exists = self.save_file_path and os.path.exists(self.save_file_path)
+        temp_file_exists = self.temp_file_path and os.path.exists(self.temp_file_path)
+        
+        # 如果两个文件同时消失，检查_storage文件夹是否也消失
+        if not save_file_exists and not temp_file_exists:
+            if self.storage_dir and not os.path.exists(self.storage_dir):
+                # 文件夹也消失了，则触发弹窗
+                if not self.ab_initio_triggered:
+                    self.root.after(0, self._trigger_ab_initio)
+                return
+        
         if not self.save_file_path or not os.path.exists(self.save_file_path):
             return
         
-        # 性能优化：先检查文件修改时间，避免不必要的内容读取
+        # 获取当前文件修改时间（用于日志/调试，但不作为跳过检查的依据）
         try:
             current_mtime = os.path.getmtime(self.save_file_path)
-            if hasattr(self, '_last_mtime') and current_mtime == self._last_mtime:
-                # 文件未修改，跳过内容检查
-                return
-            self._last_mtime = current_mtime
         except (OSError, IOError):
-            pass
+            current_mtime = 0
         
         # 读取临时文件（应该总是成功，因为是我们自己创建的）
         temp_content = self._read_temp_file()
@@ -927,7 +916,7 @@ class SavTool:
         if save_content is None:
             return
         
-        # 比较两个文件的内容
+        # 比较两个文件的内容（始终进行哈希比较，不依赖mtime）
         temp_hash = self._get_file_content_hash(temp_content)
         save_hash = self._get_file_content_hash(save_content)
         
@@ -943,13 +932,11 @@ class SavTool:
                 if temp_data is not None and save_data is not None:
                     # 直接使用深度比较（更可靠）
                     changes = self._deep_compare_data(temp_data, save_data)
+                    
                     if changes:
                         # 使用 after() 安全地更新 UI（tkinter 不是线程安全的）
                         # 使用默认参数避免lambda闭包问题
                         self.root.after(0, lambda c=changes: self._show_change_notification(c))
-                    # 注意：即使changes为空，文件哈希已经不同，说明文件确实有变化
-                    # 但为了不显示无意义的通知，我们只在检测到具体变化时才显示
-                    # 如果文件哈希不同但changes为空，可能是比较逻辑的问题，暂时不显示通知
                     
                     # 无论是否检测到变化，都更新临时文件（因为文件哈希已经不同）
                     self._write_temp_file(save_content)
@@ -973,6 +960,131 @@ class SavTool:
         except (json.JSONDecodeError, ValueError):
             pass
         return None
+    
+    def _trigger_ab_initio(self):
+        """触发AB INITIO事件：显示红色toast并将应用变为乱码"""
+        if self.ab_initio_triggered:
+            return
+        
+        self.ab_initio_triggered = True
+        
+        toast_message = "AB INITIO"
+        toast = Toast(
+            self.root,
+            toast_message,
+            duration=30000,  # 显示30秒
+            fade_in=200,
+            fade_out=200
+        )
+        toast.message_text.config(state="normal")
+        toast.message_text.delete("1.0", "end")
+        toast.message_text.tag_configure("ab_initio_blue", foreground="#00bfff", font=get_cjk_font(12, "bold"))
+        toast.message_text.insert("1.0", toast_message, "ab_initio_blue")
+        toast.message_text.config(state="disabled")
+        
+        self._corrupt_all_text()
+    
+    def _generate_random_gibberish(self, original_text):
+        """动态生成随机乱码文本（英文、中文、日文字符混合）"""
+        if not original_text:
+            return original_text
+        
+        # 定义字符集：英文、中文、日文
+        english_chars = string.ascii_letters + string.digits + string.punctuation + " "
+        chinese_chars = "".join([chr(i) for i in range(0x4e00, 0x9fff)])  # 常用汉字范围
+        japanese_chars = "".join([chr(i) for i in range(0x3040, 0x309f)]) + "".join([chr(i) for i in range(0x30a0, 0x30ff)])  # 平假名和片假名
+        
+        # 混合字符集
+        all_chars = english_chars + chinese_chars + japanese_chars
+        
+        # 生成与原文本长度相同的随机乱码
+        result = []
+        for char in original_text:
+            if char.isspace():
+                # 保留空格
+                result.append(char)
+            else:
+                result.append(random.choice(all_chars))
+        
+        return ''.join(result)
+    
+    def _corrupt_all_text(self):
+        """将整个应用的所有文本永久性变为随机乱码"""
+        for lang in self.translations:
+            for key in self.translations[lang]:
+                original_text = self.translations[lang][key]
+                self.translations[lang][key] = self._generate_random_gibberish(original_text)
+        
+        self.update_ui_texts()
+        
+        self._corrupt_widget_texts(self.root)
+    
+    def _corrupt_widget_texts(self, widget):
+        """递归更新widget及其子widget的文本为乱码"""
+        try:
+            # 获取widget类型
+            widget_type = widget.winfo_class()
+            
+            # 根据widget类型更新文本
+            if widget_type == "Label" or widget_type == "TLabel":
+                try:
+                    current_text = widget.cget("text")
+                    if current_text:
+                        widget.config(text=self._generate_random_gibberish(current_text))
+                except:
+                    pass
+            elif widget_type == "Button" or widget_type == "TButton":
+                try:
+                    current_text = widget.cget("text")
+                    if current_text:
+                        widget.config(text=self._generate_random_gibberish(current_text))
+                except:
+                    pass
+            elif widget_type == "Menu":
+                # Menu需要特殊处理
+                try:
+                    menu_items = widget.index(tk.END)
+                    if menu_items is not None:
+                        for i in range(menu_items + 1):
+                            try:
+                                label = widget.entrycget(i, "label")
+                                if label:
+                                    widget.entryconfig(i, label=self._generate_random_gibberish(label))
+                            except:
+                                pass
+                except:
+                    pass
+            elif widget_type == "Treeview":
+                # Treeview的列标题
+                try:
+                    columns = widget.cget("columns")
+                    if columns:
+                        for col in columns:
+                            try:
+                                heading_info = widget.heading(col)
+                                if heading_info:
+                                    heading_text = heading_info.get("text", "")
+                                    if heading_text:
+                                        widget.heading(col, text=self._generate_random_gibberish(heading_text))
+                            except:
+                                pass
+                    # 也处理#0列
+                    try:
+                        heading_info = widget.heading("#0")
+                        if heading_info:
+                            heading_text = heading_info.get("text", "")
+                            if heading_text:
+                                widget.heading("#0", text=self._generate_random_gibberish(heading_text))
+                    except:
+                        pass
+                except:
+                    pass
+            
+            # 递归处理子widget
+            for child in widget.winfo_children():
+                self._corrupt_widget_texts(child)
+        except:
+            pass
     
     def _load_save_file(self):
         """加载存档文件（处理文件锁定问题）"""
@@ -1051,16 +1163,24 @@ class SavTool:
         
         # 处理数字类型：int和float的数值比较
         if isinstance(old_val, (int, float)) and isinstance(new_val, (int, float)):
-            # 对于整数，直接比较整数值
-            if isinstance(old_val, int) and isinstance(new_val, int):
-                return old_val == new_val
-            # 对于浮点数，使用很小的误差范围来比较
-            if isinstance(old_val, float) or isinstance(new_val, float):
-                # 如果都是整数（但类型是float），转换为int比较
-                if old_val.is_integer() and new_val.is_integer():
-                    return int(old_val) == int(new_val)
-                return abs(float(old_val) - float(new_val)) < 1e-10
-            return int(old_val) == int(new_val)
+            # 排除布尔值（bool是int的子类）
+            if isinstance(old_val, bool) or isinstance(new_val, bool):
+                # 布尔值由下面的布尔处理逻辑处理
+                pass
+            else:
+                # 对于整数，直接比较整数值
+                if isinstance(old_val, int) and isinstance(new_val, int):
+                    return old_val == new_val
+                # 对于浮点数或混合类型，转换为float比较
+                old_float = float(old_val)
+                new_float = float(new_val)
+                # 如果都是整数值（如5.0和5），使用整数比较
+                old_is_int = isinstance(old_val, int) or (isinstance(old_val, float) and old_val.is_integer())
+                new_is_int = isinstance(new_val, int) or (isinstance(new_val, float) and new_val.is_integer())
+                if old_is_int and new_is_int:
+                    return int(old_float) == int(new_float)
+                # 否则使用浮点数比较（带小误差范围）
+                return abs(old_float - new_float) < 1e-10
         
         # 处理布尔值：True/False 和 1/0 的比较
         if isinstance(old_val, bool) and isinstance(new_val, (int, float)):
@@ -1083,6 +1203,9 @@ class SavTool:
         """深度比较数据，找出所有差异（使用严格比较）"""
         changes = []
         
+        # 需要忽略的字段（这些字段变化频繁但不重要）
+        ignored_keys = {"record"}
+        
         # 确保都是字典
         if not isinstance(old_data, dict):
             old_data = {}
@@ -1093,6 +1216,10 @@ class SavTool:
         all_keys = set(old_data.keys()) | set(new_data.keys())
         
         for key in all_keys:
+            # 跳过忽略的字段
+            if key in ignored_keys:
+                continue
+            
             full_key = f"{prefix}.{key}" if prefix else key
             
             old_value = old_data.get(key)
@@ -1188,20 +1315,33 @@ class SavTool:
         return changes
     
     def _compare_lists(self, key, old_list, new_list):
-        """比较两个列表的差异"""
+        """比较两个列表的差异（支持包含不可哈希元素的列表）"""
         changes = []
-        old_set = set(old_list)
-        new_set = set(new_list)
         
-        # 添加的元素
-        added = new_set - old_set
-        for item in added:
-            changes.append(f"{key}.append({self._format_value(item)})")
+        # 将元素转换为可比较的形式（用于处理嵌套列表/字典）
+        def make_comparable(item):
+            """将元素转换为可用于比较的形式"""
+            if isinstance(item, (list, dict)):
+                return json.dumps(item, sort_keys=True, ensure_ascii=False)
+            return item
         
-        # 移除的元素
-        removed = old_set - new_set
-        for item in removed:
-            changes.append(f"{key}.remove({self._format_value(item)})")
+        def find_item_in_list(item, lst):
+            """检查元素是否在列表中（支持复杂类型）"""
+            item_cmp = make_comparable(item)
+            for other in lst:
+                if make_comparable(other) == item_cmp:
+                    return True
+            return False
+        
+        # 查找添加的元素（在new_list中但不在old_list中）
+        for item in new_list:
+            if not find_item_in_list(item, old_list):
+                changes.append(f"{key}.append({self._format_value(item)})")
+        
+        # 查找移除的元素（在old_list中但不在new_list中）
+        for item in old_list:
+            if not find_item_in_list(item, new_list):
+                changes.append(f"{key}.remove({self._format_value(item)})")
         
         return changes
     
@@ -1222,23 +1362,112 @@ class SavTool:
             return str(value)
     
     def _show_change_notification(self, changes):
-        """显示存档文件变动通知"""
-        # 构建消息（硬编码中文）
-        message_lines = ["sf.sav文件有如下更改："]
-        message_lines.extend(changes)
-        message = "\n".join(message_lines)
+        """显示存档文件变动通知（支持合并连续变化）"""
+        # 解析变化，区分可合并的和不可合并的
+        mergeable_changes = {}  # {变量名: (旧值, 新值)}
+        other_changes = []
         
-        # 创建新的通知（自动堆叠在上方）
-        toast = Toast(
-            self.root,
-            message,
-            duration=15000,  # 显示时间
-            fade_in=200,     # 淡入
-            fade_out=200     # 淡出
-        )
+        for change in changes:
+            # 检测格式：变量名 旧值→新值
+            if "→" in change and not change.startswith("+") and not change.startswith("-"):
+                # 尝试解析：变量名 旧值→新值
+                arrow_pos = change.find("→")
+                # 从箭头往前找空格，确定变量名
+                prefix = change[:arrow_pos]
+                last_space = prefix.rfind(" ")
+                if last_space > 0:
+                    var_name = prefix[:last_space].strip()
+                    old_val = prefix[last_space+1:].strip()
+                    new_val = change[arrow_pos+1:].strip()
+                    mergeable_changes[var_name] = (old_val, new_val)
+                else:
+                    other_changes.append(change)
+            else:
+                other_changes.append(change)
         
-        # 添加到活跃列表（Toast类会自动管理）
-        self.active_toasts.append(toast)
+        # 处理可合并的变化
+        updated_toasts = set()
+        new_changes_for_toast = []
+        
+        for var_name, (old_val, new_val) in mergeable_changes.items():
+            if var_name in self.variable_change_chains:
+                # 该变量已有活跃的变化链，尝试追加
+                chain_info = self.variable_change_chains[var_name]
+                toast = chain_info.get("toast")
+                if toast and toast.window.winfo_exists():
+                    # Toast 仍然存在，追加变化
+                    chain_info["chain"].append(new_val)
+                    updated_toasts.add(var_name)
+                    # 重置定时器
+                    toast.reset_timer()
+                else:
+                    # Toast 已经消失，创建新的变化链
+                    self.variable_change_chains[var_name] = {"chain": [old_val, new_val], "toast": None}
+                    new_changes_for_toast.append(f"{var_name} {old_val}→{new_val}")
+            else:
+                # 新的变量变化
+                self.variable_change_chains[var_name] = {"chain": [old_val, new_val], "toast": None}
+                new_changes_for_toast.append(f"{var_name} {old_val}→{new_val}")
+        
+        # 更新已有的toast
+        for var_name in updated_toasts:
+            chain_info = self.variable_change_chains[var_name]
+            chain = chain_info["chain"]
+            toast = chain_info["toast"]
+            if toast and toast.window.winfo_exists():
+                # 重建该toast的消息
+                chain_str = "→".join(str(v) for v in chain)
+                new_line = f"{var_name} {chain_str}"
+                # 获取当前消息，更新对应行
+                current_msg = toast.message
+                lines = current_msg.split("\n")
+                updated_lines = []
+                found = False
+                for line in lines:
+                    if line.startswith(var_name + " ") and "→" in line:
+                        updated_lines.append(new_line)
+                        found = True
+                    else:
+                        updated_lines.append(line)
+                if not found:
+                    updated_lines.append(new_line)
+                new_msg = "\n".join(updated_lines)
+                toast.update_message(new_msg)
+        
+        # 如果有新的变化或其他变化，创建新的toast
+        all_new_changes = new_changes_for_toast + other_changes
+        if all_new_changes:
+            # 构建消息
+            message_lines = ["sf.sav文件有如下更改："]
+            message_lines.extend(all_new_changes)
+            message = "\n".join(message_lines)
+            
+            # 创建新的通知
+            toast = Toast(
+                self.root,
+                message,
+                duration=15000,  # 显示时间
+                fade_in=200,     # 淡入
+                fade_out=200     # 淡出
+            )
+            
+            # 将新的toast关联到变量变化链
+            for var_name in mergeable_changes:
+                if var_name not in updated_toasts:
+                    if var_name in self.variable_change_chains:
+                        self.variable_change_chains[var_name]["toast"] = toast
+            
+            # 添加到活跃列表
+            self.active_toasts.append(toast)
+        
+        # 清理已经消失的变化链
+        to_remove = []
+        for var_name, chain_info in self.variable_change_chains.items():
+            toast = chain_info.get("toast")
+            if toast and not toast.window.winfo_exists():
+                to_remove.append(var_name)
+        for var_name in to_remove:
+            del self.variable_change_chains[var_name]
     
     def on_closing(self):
         """窗口关闭事件处理"""
@@ -1535,13 +1764,7 @@ class SavTool:
             if self.success_label_timer is not None:
                 self.root.after_cancel(self.success_label_timer)
                 self.success_label_timer = None
-            # 显示成功信息
-            success_text = self.t("steam_detect_success_text", path=storage_path)
-            self.success_label.config(text=success_text)
-            self.success_label.pack(anchor="nw", padx=10, pady=10)
-            # 15秒后自动隐藏
-            self.success_label_timer = self.root.after(15000, self.hide_success_label)
-            self.load_screenshots()
+            self.load_screenshots(silent=True)
             # 更新批量导出按钮状态
             self.update_batch_export_button()
             # 初始化存档分析界面
@@ -1553,7 +1776,7 @@ class SavTool:
         else:
             messagebox.showinfo(self.t("warning"), self.t("steam_detect_not_found"))
 
-    def load_screenshots(self):
+    def load_screenshots(self, silent=False):
         if not self.storage_dir:
             return
 
@@ -1561,7 +1784,8 @@ class SavTool:
         all_ids_path = os.path.join(self.storage_dir, 'DevilConnection_photo_all_ids.sav')
 
         if not (os.path.exists(ids_path) and os.path.exists(all_ids_path)):
-            messagebox.showerror(self.t("error"), self.t("missing_files"))
+            if not silent:
+                messagebox.showerror(self.t("error"), self.t("missing_files"))
             return
 
         # 加载 ids 和 all_ids

@@ -13,7 +13,7 @@ tkinter + [Custom tkinter](https://customtkinter.tomschimansky.com/) でGUIを�
 
 ## 機能特徴
 
-ツールは2つのタブで構成されています。
+ツールは3つのタブで構成されています。
 
 ### 📸 スクリーンショット管理
 - 🖼️ **画像プレビュー**：.savファイルに埋め込まれたbase64画像を自動デコードしてプレビュー表示
@@ -30,6 +30,9 @@ tkinter + [Custom tkinter](https://customtkinter.tomschimansky.com/) でGUIを�
   - その他いろいろ
 - **エンディング達成条件一覧**：各エンディングの解除条件を一覧表示（未達成はハイライト）
 - **セーブデータビューア**：`DevilConnection_sf.sav`の内容を便利に見たり編集したり可能
+
+### 💾 バックアップ・復元
+- `_storage`フォルダ全体をZIP形式でバックアップし、ローカルに保存。必要に応じて復元可能
 
 ## インストール
 
@@ -82,6 +85,13 @@ python main.py
 #### 変数名表示
 - 「変数名を表示」にチェックを入れると、各項目の横に実際の変数名（例：`memory.name`、`endings` など）が表示され、セーブデータ内の位置が把握しやすくなります
 
+#### 変更通知（Toast）
+- `DevilConnection_sf.sav`セーブファイルが外部で変更された場合、自動的に通知が表示されます
+- 変更内容（変数名と値の変化）がリアルタイムで表示されます
+
+### Q: なぜ`DevilConnection_tyrano_data.sav`セーブファイルの読み取り/編集機能がないのか
+- A: このセーブファイルは一般的に大きすぎて、現在のtkinterアーキテクチャでは処理できません。編集が必要な場合は、URLデコードを手動で行ってください。
+
 ### Q：このツールって何の役に立つの？
 A：実用性はそこまで高くないです。一番便利なのはステッカーとNEO値の数をすぐ確認できることと、スクショの出し入れが楽になることくらいです。ゲーム内スクショをちょっと加工したいときも、一度ツールで画像を入れてゲーム内で加工してまた取り出す、みたいな遊び方ができます。
 
@@ -99,8 +109,6 @@ MIT License
 暇なときに書いたものなので、個人テストでは問題ありませんでしたが、抜け漏れがあるかもしれません。  
 IssueやPull Requestは大歓迎です。
 
-理論上は少し改造すれば、TyranoBuilder製でスクリーンショットを.savで保存している他のゲームにも対応可能ですが、今は使いやすさを優先して《でびるコネクショん》特化にしています。
-
 </details>
 
 <details>
@@ -114,7 +122,7 @@ IssueやPull Requestは大歓迎です。
 
 ## 功能特性
 
-本工具由两个标签页组成：
+本工具由三个标签页组成：
 
 ### 📸 截图管理
 
@@ -133,6 +141,9 @@ IssueやPull Requestは大歓迎です。
   - 等等一些
 - **达成条件显示**：一览显示各结局的达成条件（未达成结局会高亮显示）
 - **存档文件查看器**：便利的查看/修改`DevilConnection_sf.sav`中的信息
+
+### 💾 备份/还原
+- *将`_storage`文件夹整体备份为ZIP格式并存入本地，需要时可还原
 
 ## 安装
 
@@ -192,6 +203,14 @@ python main.py
 
 - 勾选"显示变量名"复选框后，各信息前会显示变量名（如`memory.name`、`endings`等），方便确认变量在存档文件中的位置。
 
+#### 变更通知（Toast）
+
+- 当`DevilConnection_sf.sav`存档文件在外部被修改时，会自动显示通知
+- 实时显示变更内容（变量名和值的变化）
+
+### Q: 为什么没有读取/修改`DevilConnection_tyrano_data.sav`存档文件的功能
+- A: 该存档文件一般过于大了，目前的tkinter架构处理不来，如果有需要修改可以自行url解码。
+
 ### Q：这个项目有什么用？
 
 - A：没什么很大的实际用途。最重要的大概是速查贴纸和NEO值的数量，同时方便导入导出游戏内截图。如果你想快速往图片中添加一个游戏内的截图也可以将图片导入进去，在游戏中修改，再提取出来。可以玩玩。
@@ -212,7 +231,6 @@ MIT License
 
 - 本项目是利用闲暇时间写出的，经个人测试未发现使用问题，但难免会有疏漏。非常欢迎提交issue或者pull request。
 
-- 理论上该项目经过一些小改动应该就可以支持所有使用Tyrano构建且以.sav文件保存截图的游戏，但目前为了方便使用是 でびるコネクショん 特化。
 
 </details>
 
@@ -227,7 +245,7 @@ GUI is built with tkinter and [Custom tkinter](https://customtkinter.tomschimans
 
 ## Features
 
-The tool consists of two tabs:
+The tool consists of three tabs:
 
 ### 📸 Screenshot Management
 - 🖼️ **Preview**: Automatically decodes base64 images inside .sav files and displays them
@@ -244,6 +262,9 @@ The tool consists of two tabs:
   - And some more details
 - **Ending unlock conditions list**: Shows requirements for every ending at a glance (unachieved endings are highlighted)
 - **Save file viewer/editor**: Conveniently view and modify the contents of `DevilConnection_sf.sav`
+
+### 💾 Backup & Restore
+- Backup the entire `_storage` folder as a ZIP file and save locally. Restore at any time when needed
 
 ## Installation
 
@@ -294,7 +315,14 @@ python main.py
 - To edit collapsed fields (`record`, `_tap_effect`, `initialVars`, etc.), first check “Unfold All / Expand Horizontally”
 
 #### Variable Name Display
-- When “Show Variable Names” is checked, the actual variable path (e.g., `memory.name`, `endings`, etc.) is shown next to each item, making it easy to locate values in the save file
+- When "Show Variable Names" is checked, the actual variable path (e.g., `memory.name`, `endings`, etc.) is shown next to each item, making it easy to locate values in the save file
+
+#### Change Notifications (Toast)
+- When the `DevilConnection_sf.sav` save file is modified externally, notifications are automatically displayed
+- Shows real-time change details (variable names and value changes)
+
+### Q: Why is there no feature to read/edit the `DevilConnection_tyrano_data.sav` save file?
+- A: This save file is generally too large for the current tkinter architecture to handle. If you need to edit it, you can manually URL decode it.
 
 ### Q: What is this tool actually useful for?
 A: It doesn't have huge practical value. The most useful parts are probably quickly checking sticker counts and NEO value, and easily importing/exporting gallery screenshots. You can also import an image, edit it in-game, then extract it again—just for fun.
@@ -311,7 +339,5 @@ MIT License
 
 ## Contributions
 This was written in spare time and works fine in my own testing, but there may be edge cases. Issues and pull requests are very welcome!
-
-Thereotically, with minor modifications the tool could support any TyranoBuilder game that saves screenshots as .sav files, but for ease of use it is currently specialized for でびるコネクショん.
 
 </details>

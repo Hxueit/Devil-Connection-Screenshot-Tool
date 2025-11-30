@@ -67,7 +67,6 @@ class BackupRestore:
             return None
         
         try:
-            # 收集所有文件路径
             all_files = []
             total_size = 0
             
@@ -79,52 +78,41 @@ class BackupRestore:
                         all_files.append((file_path, file_size))
                         total_size += file_size
                     except Exception:
-                        # 如果无法获取文件大小，跳过该文件
                         continue
             
             if not all_files:
                 return 0
             
-            # 选择前10%的文件进行实际压缩测试
             sample_count = max(1, len(all_files) // 10)
             sample_files = all_files[:sample_count]
             sample_total_size = sum(size for _, size in sample_files)
             
-            # 创建临时zip文件进行压缩测试
-            # 使用mkstemp避免Windows上的文件锁定问题
             temp_fd, temp_zip_path = tempfile.mkstemp(suffix='.zip')
             compressed_sample_size = None
             try:
-                os.close(temp_fd)  # 关闭文件描述符，让ZipFile自己打开
+                os.close(temp_fd)
                 with zipfile.ZipFile(temp_zip_path, 'w', zipfile.ZIP_DEFLATED, compresslevel=7) as test_zip:
                     for file_path, _ in sample_files:
                         try:
-                            # 计算相对路径
                             rel_path = os.path.relpath(file_path, storage_dir)
                             test_zip.write(file_path, rel_path)
                         except Exception:
-                            # 如果某个文件无法读取，跳过它
                             continue
                 
-                # 获取压缩后的大小（确保ZipFile已关闭）
                 if os.path.exists(temp_zip_path):
                     compressed_sample_size = os.path.getsize(temp_zip_path)
             finally:
-                # 清理临时文件
                 try:
                     if os.path.exists(temp_zip_path):
                         os.remove(temp_zip_path)
                 except Exception:
                     pass
             
-            # 计算压缩比
             if compressed_sample_size is not None and sample_total_size > 0:
                 compression_ratio = compressed_sample_size / sample_total_size
             else:
-                # 如果无法获取压缩大小或样本总大小为0，使用默认压缩比
-                compression_ratio = 0.7  # 默认压缩比
+                compression_ratio = 0.7 #默认压缩比
             
-            # 估算总大小
             estimated_size = int(total_size * compression_ratio)
             return estimated_size
             
@@ -149,7 +137,6 @@ class BackupRestore:
         if not backup_dir:
             return None
         
-        # 如果备份目录不存在，创建它
         if not os.path.exists(backup_dir):
             try:
                 os.makedirs(backup_dir)
@@ -157,7 +144,6 @@ class BackupRestore:
                 return None
         
         try:
-            # 生成文件名
             now = datetime.now()
             filename = f"DC_storage_backup_{now.strftime('%Y%m%d_%H%M%S')}.zip"
             backup_path = os.path.join(backup_dir, filename)
@@ -171,40 +157,32 @@ class BackupRestore:
             
             total_files = len(all_files) + 1  # +1 for INFO file
             
-            # 创建临时目录用于存放INFO文件
             with tempfile.TemporaryDirectory() as temp_dir:
                 info_file_path = os.path.join(temp_dir, "dcsmINFO.txt")
                 
-                # 写入INFO文件
                 timestamp_str = now.strftime('%Y-%m-%d %H:%M:%S')
                 with open(info_file_path, 'w', encoding='utf-8') as f:
                     f.write(f"{timestamp_str}\n")
                     f.write("This backup .zip was created using https://github.com/Hxueit/Devil-Connection-Sav-Manager/\n")
                     f.write(f"ver:{VERSION}\n")
                 
-                # 创建zip文件
                 current = 0
                 with zipfile.ZipFile(backup_path, 'w', zipfile.ZIP_DEFLATED, compresslevel=7) as zipf:
-                    # 添加INFO文件
                     zipf.write(info_file_path, "dcsmINFO.txt")
                     current += 1
                     if progress_callback:
                         progress_callback(current, total_files)
                     
-                    # 添加_storage文件夹中的所有文件
                     for file_path in all_files:
                         try:
-                            # 计算相对路径（相对于storage_dir）
                             rel_path = os.path.relpath(file_path, storage_dir)
                             zipf.write(file_path, rel_path)
                             current += 1
                             if progress_callback:
                                 progress_callback(current, total_files)
                         except Exception:
-                            # 如果某个文件无法读取，跳过它
-                            continue
+                                continue
                 
-                # 获取实际大小
                 actual_size = os.path.getsize(backup_path)
                 abs_path = os.path.abspath(backup_path)
                 
@@ -230,7 +208,6 @@ class BackupRestore:
         backups = []
         
         try:
-            # 扫描所有zip文件
             for filename in os.listdir(backup_dir):
                 if filename.endswith('.zip'):
                     zip_path = os.path.join(backup_dir, filename)
@@ -242,16 +219,13 @@ class BackupRestore:
                     timestamp = None
                     has_info = False
                     
-                    # 尝试读取INFO文件
                     try:
                         with zipfile.ZipFile(zip_path, 'r') as zipf:
                             if 'dcsmINFO.txt' in zipf.namelist():
                                 has_info = True
-                                # 读取第一行时间戳
                                 with zipf.open('dcsmINFO.txt') as info_file:
                                     first_line = info_file.readline().decode('utf-8').strip()
                                     try:
-                                        # 解析时间戳
                                         timestamp = datetime.strptime(first_line, '%Y-%m-%d %H:%M:%S')
                                     except ValueError:
                                         timestamp = None
@@ -260,14 +234,11 @@ class BackupRestore:
                     
                     backups.append((zip_path, timestamp, has_info, file_size))
             
-            # 排序：有INFO的在前（按时间倒序），无INFO的在后
             backups_with_info = [(p, t, h, s) for p, t, h, s in backups if h and t is not None]
             backups_without_info = [(p, t, h, s) for p, t, h, s in backups if not h or t is None]
             
-            # 有INFO的按时间倒序排序
             backups_with_info.sort(key=lambda x: x[1], reverse=True)
             
-            # 合并列表
             return backups_with_info + backups_without_info
             
         except Exception:
@@ -313,7 +284,6 @@ class BackupRestore:
             return False
         
         try:
-            # 删除_storage目录中的所有现有文件
             if os.path.exists(storage_dir):
                 for root, dirs, files in os.walk(storage_dir):
                     for file in files:
@@ -329,15 +299,11 @@ class BackupRestore:
                         except Exception:
                             pass
             
-            # 解压zip文件
             with zipfile.ZipFile(zip_path, 'r') as zipf:
-                # 解压所有文件
                 for member in zipf.namelist():
-                    # 跳过INFO文件
                     if member == 'dcsmINFO.txt':
                         continue
                     
-                    # 解压文件
                     zipf.extract(member, storage_dir)
             
             return True
@@ -359,22 +325,16 @@ class BackupRestore:
             return False
         
         try:
-            # 获取备份目录
             backup_dir = os.path.dirname(zip_path)
             
-            # 删除备份文件
             os.remove(zip_path)
             
-            # 检查备份目录是否为空
             if os.path.exists(backup_dir):
                 try:
-                    # 检查目录中是否还有其他文件
                     remaining_files = os.listdir(backup_dir)
                     if not remaining_files:
-                        # 目录为空，删除目录
                         os.rmdir(backup_dir)
                 except Exception:
-                    # 如果无法删除目录，忽略错误（可能还有其他文件）
                     pass
             
             return True

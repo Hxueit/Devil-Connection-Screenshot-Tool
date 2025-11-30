@@ -15,13 +15,10 @@ def get_embedded_icon_path():
     """从嵌入的 base64 数据中提取图标到临时文件"""
     global _temp_icon_path
     
-    # 如果已经创建过临时文件，直接返回
     if _temp_icon_path and os.path.exists(_temp_icon_path):
         return _temp_icon_path
     
-    # 如果还没有 base64 数据，尝试从文件读取（开发环境）
     if ICON_BASE64 is None:
-        # 开发环境：尝试从文件读取
         possible_paths = [
             os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.ico"),
             os.path.join(os.getcwd(), "icon.ico"),
@@ -33,7 +30,6 @@ def get_embedded_icon_path():
                     with open(icon_path, 'rb') as f:
                         icon_data = f.read()
                     icon_b64 = base64.b64encode(icon_data).decode('utf-8')
-                    # 创建临时文件
                     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.ico')
                     temp_file.write(icon_data)
                     temp_file.close()
@@ -43,7 +39,6 @@ def get_embedded_icon_path():
                     continue
         return None
     
-    # 从 base64 数据创建临时文件
     try:
         icon_data = base64.b64decode(ICON_BASE64)
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.ico')

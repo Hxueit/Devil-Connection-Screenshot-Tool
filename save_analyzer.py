@@ -23,23 +23,16 @@ class SaveAnalyzer:
         
         self.window = parent
         
-        # 样式已在主程序中通过 init_styles() 初始化
-        
-        # 性能优化：缓存宽度值，使用防抖机制避免频繁更新
-        # 获取窗口宽度并计算2/3作为方框宽度
-        self.window.update_idletasks()  # 确保窗口已渲染
+        self.window.update_idletasks()
         window_width = self.window.winfo_width()
         if window_width <= 1:
-            # 如果窗口还未完全渲染，使用默认值，稍后会更新
             window_width = 800
         self._cached_width = int(window_width * 2 / 3)
         self._width_update_pending = False
         
-        # 创建顶部控制栏
         control_frame = tk.Frame(self.window, bg=Colors.WHITE)
         control_frame.pack(fill="x", padx=10, pady=5)
         
-        # 显示变量名复选框
         self.show_var_names_var = tk.BooleanVar(value=False)
         self.show_var_names_checkbox = ttk.Checkbutton(control_frame, 
                                                   text=self.t("show_var_names"),
@@ -57,22 +50,18 @@ class SaveAnalyzer:
         self._is_initialized = False  # 标记是否已完成首次初始化
         self._dynamic_widgets = {}  # 存储动态内容（如缺失结局列表）的 widget 引用
         self._section_title_widgets = {}  # 存储 section 标题和按钮的引用，用于语言切换
-        self._hint_labels = []  # 存储提示标签的引用，用于语言切换
+        self._hint_labels = []
         
-        # 刷新按钮（右上角）
         self.refresh_button = ttk.Button(control_frame, text=self.t("refresh"), 
                                     command=self.refresh, name="refresh")
         self.refresh_button.pack(side="right", padx=5)
         
-        # 创建主容器Frame，用于放置PanedWindow和滚动条
         main_container = tk.Frame(self.window, bg=Colors.WHITE)
         main_container.pack(fill="both", expand=True)
         
-        # 创建PanedWindow分割左右区域（隐藏分割线）
         main_paned = tk.PanedWindow(main_container, orient="horizontal", sashwidth=0, bg=Colors.WHITE, sashrelief='flat')
         main_paned.pack(side="left", fill="both", expand=True)
         
-        # 左侧2/3区域：可滚动的内容区域
         left_frame = tk.Frame(main_paned, bg=Colors.WHITE)
         main_paned.add(left_frame, width=800, minsize=400)
         
@@ -313,19 +302,68 @@ class SaveAnalyzer:
     def toggle_var_names_display(self):
         """切换变量名显示状态"""
         show = self.show_var_names_var.get()
-        for widget_info in self.var_name_widgets:
-            widget = widget_info['widget']
-            parent = widget_info['parent']
-            label_widget = widget_info['label_widget']
+        # 使用列表副本遍历，避免在遍历时修改列表
+        invalid_widgets = []
+        for idx, widget_info in enumerate(self.var_name_widgets):
+            widget = widget_info.get('widget')
+            parent = widget_info.get('parent')
+            label_widget = widget_info.get('label_widget')
             
-            if show:
-                # 在标签前面显示变量名
-                widget.pack(side="left", padx=2, before=label_widget)
-            else:
-                widget.pack_forget()
+            # 检查 widget 和 label_widget 是否仍然有效
+            try:
+                if not widget or not widget.winfo_exists():
+                    invalid_widgets.append(idx)
+                    continue
+                if not label_widget or not label_widget.winfo_exists():
+                    invalid_widgets.append(idx)
+                    continue
+            except:
+                # widget 引用无效
+                invalid_widgets.append(idx)
+                continue
+            
+            try:
+                if show:
+                    # 在标签前面显示变量名
+                    widget.pack(side="left", padx=2, before=label_widget)
+                else:
+                    widget.pack_forget()
+            except tk.TclError:
+                # widget 已被销毁，标记为无效
+                invalid_widgets.append(idx)
+        
+        # 从后往前删除无效的 widget 引用（避免索引变化问题）
+        for idx in reversed(invalid_widgets):
+            if idx < len(self.var_name_widgets):
+                self.var_name_widgets.pop(idx)
     
     def refresh(self):
         """刷新存档分析页面：重新加载存档并更新显示（支持增量更新）"""
+        # 确保所有待处理的 GUI 事件已完成，避免状态不一致
+        try:
+            self.window.update_idletasks()
+        except:
+            pass
+        
+        # 取消所有可能正在运行的定时器，避免状态不一致
+        # 取消乱码更新定时器
+        if hasattr(self, '_gibberish_update_job') and self._gibberish_update_job is not None:
+            try:
+                self.window.after_cancel(self._gibberish_update_job)
+            except:
+                pass
+            self._gibberish_update_job = None
+        
+        # 取消统计面板动画定时器
+        if hasattr(self, '_stats_widgets'):
+            sticker_canvas = self._stats_widgets.get('sticker_canvas')
+            if sticker_canvas and hasattr(sticker_canvas, '_animation_job') and sticker_canvas._animation_job:
+                try:
+                    self.window.after_cancel(sticker_canvas._animation_job)
+                except:
+                    pass
+                sticker_canvas._animation_job = None
+        
         # 更新按钮文本（语言切换时）
         if hasattr(self, 'show_var_names_checkbox'):
             self.show_var_names_checkbox.config(text=self.t("show_var_names"))
@@ -382,7 +420,45 @@ class SaveAnalyzer:
             self.display_save_info(self.scrollable_frame, self.save_data)
             # 更新统计面板（使用存储的容器引用）
             if hasattr(self, '_stats_container') and self._stats_container:
-                self.update_statistics_panel(self._stats_container, self.save_data)
+                # 检查容器是否仍然有效
+                try:
+                    if self._stats_container.winfo_exists():
+                        self.update_statistics_panel(self._stats_container, self.save_data)
+                    else:
+                        # 容器已被销毁，清除引用并重新创建
+                        self._stats_container = None
+                        if hasattr(self, '_right_frame') and self._right_frame:
+                            try:
+                                if self._right_frame.winfo_exists():
+                                    self.create_statistics_panel(self._right_frame)
+                                    # 重新创建后，使用新的容器引用更新
+                                    if hasattr(self, '_stats_container') and self._stats_container:
+                                        self.update_statistics_panel(self._stats_container, self.save_data)
+                            except:
+                                pass
+                except:
+                    # 容器引用无效，清除引用并尝试重新创建
+                    self._stats_container = None
+                    if hasattr(self, '_right_frame') and self._right_frame:
+                        try:
+                            if self._right_frame.winfo_exists():
+                                self.create_statistics_panel(self._right_frame)
+                                # 重新创建后，使用新的容器引用更新
+                                if hasattr(self, '_stats_container') and self._stats_container:
+                                    self.update_statistics_panel(self._stats_container, self.save_data)
+                        except:
+                            pass
+            else:
+                # 如果容器不存在，尝试重新创建
+                if hasattr(self, '_right_frame') and self._right_frame:
+                    try:
+                        if self._right_frame.winfo_exists():
+                            self.create_statistics_panel(self._right_frame)
+                            # 重新创建后，使用新的容器引用更新
+                            if hasattr(self, '_stats_container') and self._stats_container:
+                                self.update_statistics_panel(self._stats_container, self.save_data)
+                    except:
+                        pass
         else:
             # 如果存档文件不存在或加载失败
             if self._is_initialized:
@@ -421,6 +497,19 @@ class SaveAnalyzer:
     
     def create_statistics_panel(self, parent):
         """创建统计面板（贴纸环形图、MP大字、判定小字）"""
+        # 销毁旧的统计面板容器（如果存在）
+        if hasattr(self, '_stats_container') and self._stats_container:
+            try:
+                if self._stats_container.winfo_exists():
+                    self._stats_container.destroy()
+            except:
+                pass
+            self._stats_container = None
+        
+        # 清除旧的 widget 引用
+        if hasattr(self, '_stats_widgets'):
+            self._stats_widgets.clear()
+        
         # 使用原生 tkinter 创建主容器
         stats_container = tk.Frame(parent, bg=Colors.WHITE)
         stats_container.pack(fill="both", expand=True, padx=10, pady=10)
@@ -444,9 +533,54 @@ class SaveAnalyzer:
         )
         placeholder.pack(pady=50)
     
+    def _interpolate_color(self, color1, color2, factor):
+        """在两个颜色之间进行线性插值
+        
+        Args:
+            color1: 起始颜色 (hex格式，如 "#RRGGBB")
+            color2: 结束颜色 (hex格式)
+            factor: 插值因子 (0.0 = color1, 1.0 = color2)
+        
+        Returns:
+            插值后的颜色 (hex格式)
+        """
+        # 解析颜色
+        r1 = int(color1[1:3], 16)
+        g1 = int(color1[3:5], 16)
+        b1 = int(color1[5:7], 16)
+        
+        r2 = int(color2[1:3], 16)
+        g2 = int(color2[3:5], 16)
+        b2 = int(color2[5:7], 16)
+        
+        # 线性插值
+        r = int(r1 + (r2 - r1) * factor)
+        g = int(g1 + (g2 - g1) * factor)
+        b = int(b1 + (b2 - b1) * factor)
+        
+        # 确保在有效范围内
+        r = max(0, min(255, r))
+        g = max(0, min(255, g))
+        b = max(0, min(255, b))
+        
+        return f"#{r:02x}{g:02x}{b:02x}"
+    
+    def _lighten_color(self, color, factor=0.3):
+        """将颜色变浅（用于发光效果）
+        
+        Args:
+            color: 原始颜色 (hex格式)
+            factor: 变浅程度 (0.0 = 不变, 1.0 = 纯白)
+        
+        Returns:
+            变浅后的颜色 (hex格式)
+        """
+        return self._interpolate_color(color, "#FFFFFF", factor)
+    
     def _draw_progress_ring(self, canvas, center_x, center_y, radius, line_width, 
-                           current_percent, progress_color, tag="progress"):
-        """绘制进度圆环（支持动画）
+                           current_percent, progress_color, tag="progress", 
+                           skip_full_highlight=False):
+        """绘制进度圆环（支持动画、末端高亮和发光效果）
         
         Args:
             canvas: tkinter Canvas对象
@@ -454,11 +588,13 @@ class SaveAnalyzer:
             radius: 半径
             line_width: 线宽
             current_percent: 当前百分比（0-100）
-            progress_color: 进度颜色
+            progress_color: 进度主颜色
             tag: 用于标记进度元素的tag，方便清除
+            skip_full_highlight: 100%时是否跳过整体高亮（用于庆祝动画前）
         """
-        # 清除旧的进度元素
+        # 清除旧的进度元素（包括光晕）
         canvas.delete(tag)
+        canvas.delete(f"{tag}_glow")
         
         # 计算进度（四舍五入到1%精度）
         rounded_percent = round(current_percent)
@@ -467,54 +603,290 @@ class SaveAnalyzer:
         else:
             num_segments = rounded_percent  # 每1%一段
         
-        # 绘制进度（用多条直线段绘制，避免圆形笔触端点）
-        if num_segments > 0:
-            # 每1%对应的角度
-            angle_per_segment = 360 / 100  # 3.6度
+        if num_segments <= 0:
+            return
+        
+        # 每1%对应的角度
+        angle_per_segment = 360 / 100  # 3.6度
+        
+        # 判断是否100%达成（且不跳过整体高亮）
+        is_complete = rounded_percent >= 100 and not skip_full_highlight
+        
+        # 高亮颜色（更亮的版本）
+        highlight_color = self._lighten_color(progress_color, 0.35)
+        
+        # 末端高亮的段数（最后8段会逐渐变亮）
+        highlight_segments = 8
+        
+        # ========== 第一步：绘制发光效果（外层光晕）==========
+        # 发光层：更宽、更透明的圆弧，在主进度条外围
+        if is_complete:
+            # 100%时：整体强发光
+            glow_layers = [
+                (8, 0.75),   # 更大范围
+                (5, 0.55),   
+                (3, 0.35),   # 更亮的光晕
+            ]
+        else:
+            # 普通发光
+            glow_layers = [
+                (6, 0.85),   # (额外宽度, 变浅程度) - 最外层，最淡
+                (4, 0.70),   # 中间层
+                (2, 0.50),   # 内层，较亮
+            ]
+        
+        for extra_width, lighten_factor in glow_layers:
+            glow_width = line_width + extra_width
+            for i in range(num_segments):
+                # 决定当前段是否需要高亮
+                if is_complete:
+                    # 100%：整体使用高亮色的光晕
+                    glow_color = self._lighten_color(highlight_color, lighten_factor)
+                else:
+                    # 非100%：末端几段使用高亮色光晕
+                    segments_from_end = num_segments - 1 - i
+                    if segments_from_end < highlight_segments:
+                        # 末端高亮：越靠近末端越亮
+                        highlight_factor = 1 - (segments_from_end / highlight_segments)
+                        base_color = self._interpolate_color(progress_color, highlight_color, highlight_factor)
+                        glow_color = self._lighten_color(base_color, lighten_factor)
+                    else:
+                        glow_color = self._lighten_color(progress_color, lighten_factor)
+                
+                # 计算当前段的起始角度（从顶部90度开始，顺时针）
+                start_angle = 90 - (i * angle_per_segment)
+                end_angle = 90 - ((i + 1) * angle_per_segment)
+                
+                # 转换为弧度
+                start_angle_rad = math.radians(start_angle)
+                end_angle_rad = math.radians(end_angle)
+                
+                # 计算起点和终点坐标
+                start_x = center_x + radius * math.cos(start_angle_rad)
+                start_y = center_y - radius * math.sin(start_angle_rad)
+                end_x = center_x + radius * math.cos(end_angle_rad)
+                end_y = center_y - radius * math.sin(end_angle_rad)
+                
+                # 绘制光晕段
+                canvas.create_line(
+                    start_x, start_y,
+                    end_x, end_y,
+                    fill=glow_color,
+                    width=int(glow_width),
+                    capstyle=tk.ROUND,
+                    tags=f"{tag}_glow"
+                )
+        
+        # ========== 第二步：绘制主进度条（末端高亮）==========
+        # 多层绘制改善抗锯齿
+        for offset, width in [(0, line_width), (0.5, line_width - 1), (1, max(1, line_width - 2))]:
+            offset_radius = radius + offset
             
-            # 多层绘制改善抗锯齿
-            # 背景圆环：create_oval(center_x - radius - offset, center_y - radius - offset, 
-            #                      center_x + radius + offset, center_y + radius + offset, ...)
-            # 椭圆边界框半径 = radius + offset（椭圆中心在center_x, center_y）
-            # 进度圆环：create_line的中心线半径应该匹配背景圆环的椭圆边界半径
-            # 确保使用完全相同的计算公式：radius + offset
-            for offset, width in [(0, line_width), (0.5, line_width - 1), (1, max(1, line_width - 2))]:
-                # 使用与背景圆环完全相同的半径计算：radius + offset
-                # 这确保进度圆环的中心线与背景圆环的椭圆边界对齐
-                offset_radius = radius + offset
+            # 绘制每一段
+            for i in range(num_segments):
+                # 决定当前段的颜色
+                if is_complete:
+                    # 100%：整体使用高亮色
+                    segment_color = highlight_color
+                else:
+                    # 非100%：末端几段逐渐变亮
+                    segments_from_end = num_segments - 1 - i
+                    if segments_from_end < highlight_segments:
+                        # 末端高亮：越靠近末端越亮
+                        highlight_factor = 1 - (segments_from_end / highlight_segments)
+                        segment_color = self._interpolate_color(progress_color, highlight_color, highlight_factor)
+                    else:
+                        segment_color = progress_color
                 
-                # 确保坐标计算完全正确，使用标准的极坐标转换
-                # x = center_x + radius * cos(angle)
-                # y = center_y - radius * sin(angle)  (注意Y轴向下，所以用减号)
+                # 计算当前段的起始角度（从顶部90度开始，顺时针）
+                start_angle = 90 - (i * angle_per_segment)
+                end_angle = 90 - ((i + 1) * angle_per_segment)
                 
-                # 绘制每一段（每1%一段）
-                for i in range(num_segments):
-                    # 计算当前段的起始角度（从顶部90度开始，顺时针）
+                # 转换为弧度
+                start_angle_rad = math.radians(start_angle)
+                end_angle_rad = math.radians(end_angle)
+                
+                # 计算起点和终点坐标
+                start_x = center_x + offset_radius * math.cos(start_angle_rad)
+                start_y = center_y - offset_radius * math.sin(start_angle_rad)
+                end_x = center_x + offset_radius * math.cos(end_angle_rad)
+                end_y = center_y - offset_radius * math.sin(end_angle_rad)
+                
+                # 绘制直线段，添加tag
+                canvas.create_line(
+                    start_x, start_y,
+                    end_x, end_y,
+                    fill=segment_color,
+                    width=int(width),
+                    capstyle=tk.ROUND,
+                    tags=tag
+                )
+    
+    def _animate_completion_celebration(self, canvas, center_x, center_y, radius, line_width, progress_color):
+        """100%达成时的庆祝动画：高亮从末端逐渐蔓延到整个环
+        
+        Args:
+            canvas: tkinter Canvas对象
+            center_x, center_y: 圆心坐标
+            radius: 半径
+            line_width: 线宽
+            progress_color: 进度颜色
+        """
+        # 取消之前的庆祝动画（如果存在）
+        if hasattr(canvas, '_celebration_job'):
+            try:
+                self.window.after_cancel(canvas._celebration_job)
+            except:
+                pass
+        
+        # 动画参数
+        animation_duration = 0.6  # 蔓延动画时长（秒）
+        animation_start_time = time.time()
+        
+        # 高亮颜色
+        highlight_color = self._lighten_color(progress_color, 0.35)
+        
+        # 总段数（99段，留1%空隙）
+        total_segments = 99
+        angle_per_segment = 360 / 100
+        
+        # 末端高亮的段数（与 _draw_progress_ring 保持一致）
+        initial_highlight_segments = 8
+        
+        def animate_spread():
+            """蔓延动画循环"""
+            try:
+                if not canvas.winfo_exists():
+                    return
+            except tk.TclError:
+                return
+            
+            elapsed = time.time() - animation_start_time
+            
+            if elapsed >= animation_duration:
+                # 动画完成，绘制最终状态（整体高亮）
+                self._draw_progress_ring(
+                    canvas, center_x, center_y, radius, line_width,
+                    100, progress_color, tag="progress"
+                )
+                canvas._celebration_job = None
+                return
+            
+            # 计算动画进度
+            progress = elapsed / animation_duration
+            eased_progress = ease_out_cubic(progress)
+            
+            # 计算当前有多少段应该被高亮
+            # 从初始的8段逐渐扩展到全部99段
+            current_highlight_count = initial_highlight_segments + int(
+                (total_segments - initial_highlight_segments) * eased_progress
+            )
+            
+            # 清除旧的进度元素
+            canvas.delete("progress")
+            canvas.delete("progress_glow")
+            
+            # ========== 绘制发光效果 ==========
+            glow_layers = [
+                (8, 0.75),   # 100%时的增强发光
+                (5, 0.55),   
+                (3, 0.35),
+            ]
+            
+            for extra_width, lighten_factor in glow_layers:
+                glow_width = line_width + extra_width
+                for i in range(total_segments):
+                    # 决定当前段是否高亮
+                    # 从起点开始顺时针蔓延，同时保留初始的末端高亮
+                    segments_from_end = total_segments - 1 - i
+                    is_highlighted = (i < current_highlight_count) or (segments_from_end < initial_highlight_segments)
+                    
+                    if is_highlighted:
+                        # 已被高亮蔓延到或末端高亮
+                        glow_color = self._lighten_color(highlight_color, lighten_factor)
+                    else:
+                        # 还未被蔓延到，使用普通颜色
+                        glow_color = self._lighten_color(progress_color, lighten_factor)
+                    
+                    # 计算角度
                     start_angle = 90 - (i * angle_per_segment)
                     end_angle = 90 - ((i + 1) * angle_per_segment)
                     
-                    # 转换为弧度
                     start_angle_rad = math.radians(start_angle)
                     end_angle_rad = math.radians(end_angle)
                     
-                    # 计算起点和终点坐标
+                    start_x = center_x + radius * math.cos(start_angle_rad)
+                    start_y = center_y - radius * math.sin(start_angle_rad)
+                    end_x = center_x + radius * math.cos(end_angle_rad)
+                    end_y = center_y - radius * math.sin(end_angle_rad)
+                    
+                    canvas.create_line(
+                        start_x, start_y,
+                        end_x, end_y,
+                        fill=glow_color,
+                        width=int(glow_width),
+                        capstyle=tk.ROUND,
+                        tags="progress_glow"
+                    )
+            
+            # ========== 绘制主进度条 ==========
+            for offset, width in [(0, line_width), (0.5, line_width - 1), (1, max(1, line_width - 2))]:
+                offset_radius = radius + offset
+                
+                for i in range(total_segments):
+                    # 决定当前段的颜色
+                    # 从起点开始顺时针蔓延，同时保留初始的末端高亮
+                    segments_from_end = total_segments - 1 - i
+                    is_highlighted = (i < current_highlight_count) or (segments_from_end < initial_highlight_segments)
+                    
+                    if is_highlighted:
+                        segment_color = highlight_color
+                    else:
+                        segment_color = progress_color
+                    
+                    start_angle = 90 - (i * angle_per_segment)
+                    end_angle = 90 - ((i + 1) * angle_per_segment)
+                    
+                    start_angle_rad = math.radians(start_angle)
+                    end_angle_rad = math.radians(end_angle)
+                    
                     start_x = center_x + offset_radius * math.cos(start_angle_rad)
                     start_y = center_y - offset_radius * math.sin(start_angle_rad)
                     end_x = center_x + offset_radius * math.cos(end_angle_rad)
                     end_y = center_y - offset_radius * math.sin(end_angle_rad)
                     
-                    # 绘制直线段，添加tag
                     canvas.create_line(
                         start_x, start_y,
                         end_x, end_y,
-                        fill=progress_color,
+                        fill=segment_color,
                         width=int(width),
                         capstyle=tk.ROUND,
-                        tags=tag
+                        tags="progress"
                     )
+            
+            # 继续下一帧
+            canvas._celebration_job = self.window.after(16, animate_spread)
+        
+        # 启动蔓延动画
+        animate_spread()
     
     def update_statistics_panel(self, parent, save_data):
         """更新统计面板内容（支持增量更新）"""
+        # 检查parent是否有效
+        if not parent:
+            return
+        try:
+            if not parent.winfo_exists():
+                # parent已被销毁，清除相关引用
+                if hasattr(self, '_stats_widgets'):
+                    self._stats_widgets.clear()
+                return
+        except:
+            # parent引用无效
+            if hasattr(self, '_stats_widgets'):
+                self._stats_widgets.clear()
+            return
+        
         # 取消之前的乱码更新定时器（如果存在）
         if hasattr(self, '_gibberish_update_job') and self._gibberish_update_job is not None:
             try:
@@ -529,10 +901,20 @@ class SaveAnalyzer:
         if not hasattr(self, '_original_texts'):
             self._original_texts = {}
         
-        # 如果已初始化，进行增量更新
+        # 如果已初始化，检查widget是否仍然有效
         if 'sticker_canvas' in self._stats_widgets:
-            self._update_statistics_panel_incremental(parent, save_data)
-            return
+            sticker_canvas = self._stats_widgets.get('sticker_canvas')
+            # 检查关键widget是否仍然存在
+            if sticker_canvas:
+                try:
+                    if sticker_canvas.winfo_exists():
+                        # widget仍然有效，进行增量更新
+                        self._update_statistics_panel_incremental(parent, save_data)
+                        return
+                except:
+                    pass
+            # widget已被销毁或无效，清除引用并重新创建
+            self._stats_widgets.clear()
         
         # 首次加载：清除旧内容并创建新widget
         for widget in parent.winfo_children():
@@ -543,7 +925,7 @@ class SaveAnalyzer:
         killed = save_data.get("killed", None)
         kill_start = save_data.get("killStart", 0)
         
-        is_zealot_route = (
+        is_fanatic_route = (
             (kill is not None and kill == 1) or
             (killed is not None and killed == 1) or
             (kill_start is not None and kill_start > 0)
@@ -592,20 +974,20 @@ class SaveAnalyzer:
                 tags="background_ring"
             )
         
-        # 进度圆环（根据完成度设置颜色，使用更明显的对比）
+        # 进度圆环（根据完成度设置颜色，积极向上的配色方案）
         # 如果满足狂信徒线条件，强制使用#BF0204颜色
-        if is_zealot_route:
+        if is_fanatic_route:
             progress_color = "#BF0204"  # 狂信徒线专用颜色
         elif stickers_percent == 100:
-            progress_color = "#2E7D32"  # 深绿色，更明显
+            progress_color = "#FFD54F"  # 金黄色 - 完美达成！
+        elif stickers_percent >= 95:
+            progress_color = "#81C784"  # 浅绿色 - 即将完成
         elif stickers_percent >= 90:
-            progress_color = "#4CAF50"  # 标准绿色
+            progress_color = "#4DB6AC"  # 青绿色 - 接近目标
         elif stickers_percent >= 75:
-            progress_color = "#FF9800"  # 橙色
-        elif stickers_percent >= 50:
-            progress_color = "#FFC107"  # 黄色
+            progress_color = "#4FC3F7"  # 天蓝色 - 进展良好
         else:
-            progress_color = "#F44336"  # 红色
+            progress_color = "#64B5F6"  # 浅蓝色 - 收集进行中
         
         # 中心文字：标题（贴纸统计）
         sticker_canvas.create_text(
@@ -664,9 +1046,11 @@ class SaveAnalyzer:
             current_percent = target_percent * eased_progress
             
             # 绘制进度圆环（使用保存的变量）
+            # 如果目标是100%，动画期间始终使用末端高亮模式，避免提前显示整体高亮
             self._draw_progress_ring(
                 sticker_canvas, anim_center_x, anim_center_y, anim_radius, anim_line_width,
-                current_percent, anim_progress_color, tag="progress"
+                current_percent, anim_progress_color, tag="progress",
+                skip_full_highlight=(target_percent >= 100)
             )
             
             # 更新百分比文字
@@ -679,16 +1063,31 @@ class SaveAnalyzer:
             if progress < 1.0:
                 sticker_canvas._animation_job = self.window.after(16, animate_progress)  # 约60fps
             else:
-                # 动画完成，确保最终值精确
-                self._draw_progress_ring(
-                    sticker_canvas, anim_center_x, anim_center_y, anim_radius, anim_line_width,
-                    target_percent, anim_progress_color, tag="progress"
-                )
+                # 动画完成
                 sticker_canvas.itemconfig(
                     percent_text_id,
                     text=f"{target_percent:.1f}%"
                 )
                 sticker_canvas._animation_job = None
+                
+                # 如果达到100%，先保持末端高亮状态，然后启动庆祝动画
+                if target_percent >= 100:
+                    # 绘制末端高亮状态（跳过整体高亮）
+                    self._draw_progress_ring(
+                        sticker_canvas, anim_center_x, anim_center_y, anim_radius, anim_line_width,
+                        target_percent, anim_progress_color, tag="progress", skip_full_highlight=True
+                    )
+                    # 启动庆祝动画（高亮逐渐蔓延到整个环）
+                    self._animate_completion_celebration(
+                        sticker_canvas, anim_center_x, anim_center_y, 
+                        anim_radius, anim_line_width, anim_progress_color
+                    )
+                else:
+                    # 非100%，正常绘制最终状态
+                    self._draw_progress_ring(
+                        sticker_canvas, anim_center_x, anim_center_y, anim_radius, anim_line_width,
+                        target_percent, anim_progress_color, tag="progress"
+                    )
         
         # 启动动画
         animate_progress()
@@ -818,7 +1217,7 @@ class SaveAnalyzer:
                     # 使用翻译键 good_neo，颜色 #FFEB9E
                     neo_text = self.t("good_neo")
                     text_color = "#FFEB9E"
-                elif decoded_content == '"オマ工に永遠の制裁を"':
+                elif decoded_content == '"オマエに永遠の制裁を"':
                     # 使用翻译键 bad_neo，颜色鲜红
                     neo_text = self.t("bad_neo")
                     text_color = "#FF0000"  # 鲜红色
@@ -839,7 +1238,7 @@ class SaveAnalyzer:
                 neo_original_text = neo_text  # 保存原始文本用于乱码效果
                 
                 # 如果满足狂信徒线条件，将NEO标签颜色改为深红色
-                if is_zealot_route:
+                if is_fanatic_route:
                     dark_red_color = "#8b0000"
                     neo_label.config(fg=dark_red_color)
                 
@@ -848,7 +1247,7 @@ class SaveAnalyzer:
                 pass
         
         # 如果满足狂信徒线条件，启动乱码效果
-        if is_zealot_route:
+        if is_fanatic_route:
             # 保存需要显示乱码的widget和原始文本
             self._gibberish_widgets = []
             self._original_texts = {}
@@ -965,7 +1364,7 @@ class SaveAnalyzer:
         killed = save_data.get("killed", None)
         kill_start = save_data.get("killStart", 0)
         
-        is_zealot_route = (
+        is_fanatic_route = (
             (kill is not None and kill == 1) or
             (killed is not None and killed == 1) or
             (kill_start is not None and kill_start > 0)
@@ -983,6 +1382,18 @@ class SaveAnalyzer:
         good = judge_counts.get("good", 0)
         bad = judge_counts.get("bad", 0)
         
+        # 检查parent是否有效
+        if not parent:
+            self._stats_widgets.clear()
+            return
+        try:
+            if not parent.winfo_exists():
+                self._stats_widgets.clear()
+                return
+        except:
+            self._stats_widgets.clear()
+            return
+        
         # 获取存储的widget引用
         sticker_canvas = self._stats_widgets.get('sticker_canvas')
         mp_label_value = self._stats_widgets.get('mp_label_value')
@@ -991,7 +1402,19 @@ class SaveAnalyzer:
         radius = self._stats_widgets.get('radius', 70)
         line_width = self._stats_widgets.get('line_width', 20)
         
-        if not sticker_canvas or not sticker_canvas.winfo_exists():
+        # 检查关键widget是否仍然有效
+        widget_invalid = False
+        try:
+            if not sticker_canvas or not sticker_canvas.winfo_exists():
+                widget_invalid = True
+            elif mp_label_value and not mp_label_value.winfo_exists():
+                widget_invalid = True
+            elif judge_canvas and not judge_canvas.winfo_exists():
+                widget_invalid = True
+        except:
+            widget_invalid = True
+        
+        if widget_invalid:
             # 如果widget已被销毁，重新创建
             self._stats_widgets.clear()
             self.update_statistics_panel(parent, save_data)
@@ -1007,19 +1430,19 @@ class SaveAnalyzer:
         center_x = canvas_width // 2
         center_y = canvas_height // 2
         
-        # 确定进度颜色
-        if is_zealot_route:
+        # 确定进度颜色（积极向上的配色方案）
+        if is_fanatic_route:
             progress_color = "#BF0204"
         elif stickers_percent == 100:
-            progress_color = "#2E7D32"
+            progress_color = "#FFD54F"  # 金黄色 - 完美达成！
+        elif stickers_percent >= 95:
+            progress_color = "#81C784"  # 浅绿色 - 即将完成
         elif stickers_percent >= 90:
-            progress_color = "#4CAF50"
+            progress_color = "#4DB6AC"  # 青绿色 - 接近目标
         elif stickers_percent >= 75:
-            progress_color = "#FF9800"
-        elif stickers_percent >= 50:
-            progress_color = "#FFC107"
+            progress_color = "#4FC3F7"  # 天蓝色 - 进展良好
         else:
-            progress_color = "#F44336"
+            progress_color = "#64B5F6"  # 浅蓝色 - 收集进行中
         
         # 更新贴纸环形图
         # 清除旧的进度圆环和所有文字
@@ -1090,9 +1513,11 @@ class SaveAnalyzer:
             eased_progress = ease_out_cubic(progress)
             current_percent = target_percent * eased_progress
             
+            # 如果目标是100%，动画期间始终使用末端高亮模式，避免提前显示整体高亮
             self._draw_progress_ring(
                 sticker_canvas, anim_center_x, anim_center_y, anim_radius, anim_line_width,
-                current_percent, anim_progress_color, tag="progress"
+                current_percent, anim_progress_color, tag="progress",
+                skip_full_highlight=(target_percent >= 100)
             )
             
             sticker_canvas.itemconfig(
@@ -1103,15 +1528,27 @@ class SaveAnalyzer:
             if progress < 1.0:
                 sticker_canvas._animation_job = self.window.after(16, animate_progress)
             else:
-                self._draw_progress_ring(
-                    sticker_canvas, anim_center_x, anim_center_y, anim_radius, anim_line_width,
-                    target_percent, anim_progress_color, tag="progress"
-                )
                 sticker_canvas.itemconfig(
                     percent_text_id,
                     text=f"{target_percent:.1f}%"
                 )
                 sticker_canvas._animation_job = None
+                
+                # 如果达到100%，先保持末端高亮状态，然后启动庆祝动画
+                if target_percent >= 100:
+                    self._draw_progress_ring(
+                        sticker_canvas, anim_center_x, anim_center_y, anim_radius, anim_line_width,
+                        target_percent, anim_progress_color, tag="progress", skip_full_highlight=True
+                    )
+                    self._animate_completion_celebration(
+                        sticker_canvas, anim_center_x, anim_center_y, 
+                        anim_radius, anim_line_width, anim_progress_color
+                    )
+                else:
+                    self._draw_progress_ring(
+                        sticker_canvas, anim_center_x, anim_center_y, anim_radius, anim_line_width,
+                        target_percent, anim_progress_color, tag="progress"
+                    )
         
         animate_progress()
         
@@ -1201,7 +1638,7 @@ class SaveAnalyzer:
                 if decoded_content == '"キミたちに永遠の祝福を"':
                     neo_text = self.t("good_neo")
                     text_color = "#FFEB9E"
-                elif decoded_content == '"オマ工に永遠の制裁を"':
+                elif decoded_content == '"オマエに永遠の制裁を"':
                     neo_text = self.t("bad_neo")
                     text_color = "#FF0000"
                 else:
@@ -1214,7 +1651,7 @@ class SaveAnalyzer:
                 pass
         
         # 如果满足狂信徒线条件，启动乱码效果（复用原有逻辑）
-        if is_zealot_route:
+        if is_fanatic_route:
             # 重新初始化乱码相关变量
             self._gibberish_widgets = []
             self._original_texts = {}
@@ -1242,7 +1679,7 @@ class SaveAnalyzer:
             self._gibberish_widgets = []
             self._original_texts = {}
         
-        if is_zealot_route:
+        if is_fanatic_route:
             # 狂信徒线使用深红色文字
             dark_red_color = "#8b0000"
             
@@ -1585,6 +2022,16 @@ class SaveAnalyzer:
                 if label_widget:
                     label_widget.config(text=label + ":")
                 return value_widget
+            else:
+                # widget 已无效，从映射中删除
+                del self._widget_map[widget_key]
+        
+        # 如果 parent 为 None，说明是增量更新模式但 widget 已无效
+        # 需要触发完整重建
+        if parent is None:
+            # 标记需要重建，下次 display_save_info 会进行完整创建
+            self._is_initialized = False
+            return None
         
         # 如果没有指定文字颜色，使用默认颜色
         # 注意：狂信徒区域现在使用白色背景和深红色文字，已通过text_color参数显式传递
@@ -1725,10 +2172,26 @@ class SaveAnalyzer:
                 # 更新标签文本（语言切换时可能需要）
                 if label_widget:
                     label_widget.config(text=label + ":")
+                    # 更新文字颜色（如果提供了 text_color）
+                    if text_color:
+                        label_widget.config(foreground=text_color)
                 # 更新提示文本
                 if tooltip_text_widget:
                     tooltip_text_widget.config(text=tooltip_text)
+                # 更新值文本的颜色（如果提供了 text_color）
+                if text_color:
+                    value_widget.config(foreground=text_color)
                 return value_widget
+            else:
+                # widget 已无效，从映射中删除
+                del self._widget_map[widget_key]
+        
+        # 如果 parent 为 None，说明是增量更新模式但 widget 已无效
+        # 需要触发完整重建
+        if parent is None:
+            # 标记需要重建，下次 display_save_info 会进行完整创建
+            self._is_initialized = False
+            return None
         
         # 如果没有指定文字颜色，使用默认颜色
         # 注意：狂信徒区域现在使用白色背景和深红色文字，已通过text_color参数显式传递
@@ -1827,6 +2290,17 @@ class SaveAnalyzer:
             return
         
         # 首次加载：完整创建流程
+        # 首先清除旧的内容（如果有的话）
+        for widget in parent.winfo_children():
+            widget.destroy()
+        
+        # 清除所有widget映射
+        self._widget_map.clear()
+        self._section_map.clear()
+        self._dynamic_widgets.clear()
+        self._section_title_widgets.clear()
+        self.var_name_widgets.clear()
+        
         # 获取memory数据（在多个地方使用）
         memory = save_data.get("memory", {})
         
@@ -1835,36 +2309,36 @@ class SaveAnalyzer:
         killed = save_data.get("killed", None)
         kill_start = save_data.get("killStart", 0)
         
-        is_zealot_route = (
+        is_fanatic_route = (
             (kill is not None and kill == 1) or
             (killed is not None and killed == 1) or
             (kill_start is not None and kill_start > 0)
         )
         
         # 如果满足狂信徒线条件，先创建狂信徒section（移到最顶端）
-        if is_zealot_route:
+        if is_fanatic_route:
             # 使用白色背景和深红色文字
             dark_red_text = "#8b0000"  # 深红色文字
-            zealot_section = self.create_section(parent, self.t("zealot_related"), 
+            fanatic_section = self.create_section(parent, self.t("fanatic_related"), 
                                                 bg_color=Colors.WHITE, text_color=dark_red_text,
-                                                title_key="zealot_related")
-            self._section_map["zealot_related"] = zealot_section
+                                                title_key="fanatic_related")
+            self._section_map["fanatic_related"] = fanatic_section
             
             neo = save_data.get("NEO", 0)
-            self.add_info_line_with_tooltip(zealot_section, self.t("neo_value"), neo, 
+            self.add_info_line_with_tooltip(fanatic_section, self.t("neo_value"), neo, 
                                            self.t("neo_value_tooltip"), "NEO", "NEO", text_color=dark_red_text)
             
             # 是否遭受拉米亚的诅咒
             lamia_noroi = save_data.get("Lamia_noroi", 0)
-            self.add_info_line(zealot_section, self.t("lamia_curse"), lamia_noroi, "Lamia_noroi", "Lamia_noroi", text_color=dark_red_text)
+            self.add_info_line(fanatic_section, self.t("lamia_curse"), lamia_noroi, "Lamia_noroi", "Lamia_noroi", text_color=dark_red_text)
             
             # 创伤值
             trauma = save_data.get("trauma", 0)
-            self.add_info_line(zealot_section, self.t("trauma_value"), trauma, "trauma", "trauma", text_color=dark_red_text)
+            self.add_info_line(fanatic_section, self.t("trauma_value"), trauma, "trauma", "trauma", text_color=dark_red_text)
             
             # killWarning - 狂信徒警告
             kill_warning = save_data.get("killWarning", 0)
-            self.add_info_line(zealot_section, self.t("kill_warning"), kill_warning, "killWarning", "killWarning", text_color=dark_red_text)
+            self.add_info_line(fanatic_section, self.t("kill_warning"), kill_warning, "killWarning", "killWarning", text_color=dark_red_text)
             
             # killed - 是否正在进行狂信徒线
             killed = save_data.get("killed", None)
@@ -1872,18 +2346,19 @@ class SaveAnalyzer:
                 killed_display = self.t("variable_not_exist")
             else:
                 killed_display = killed
-            self.add_info_line_with_tooltip(zealot_section, self.t("killed"), killed_display,
+            self.add_info_line_with_tooltip(fanatic_section, self.t("killed"), killed_display,
                                            self.t("killed_tooltip"), "killed", "killed", text_color=dark_red_text)
             
             # kill - 狂信徒线完成数
             kill = save_data.get("kill", 0)
-            self.add_info_line_with_tooltip(zealot_section, self.t("kill_count"), kill,
+            self.add_info_line_with_tooltip(fanatic_section, self.t("kill_count"), kill,
                                            self.t("kill_count_tooltip"), "kill", "kill", text_color=dark_red_text)
             
-            # killStart - 在狂信徒线中选择新开一局游戏的次数
+            # killStart - 在狂信徒线中选择新开一局游戏的次数（已废弃）
             kill_start = save_data.get("killStart", 0)
-            self.add_info_line_with_tooltip(zealot_section, self.t("kill_start"), kill_start,
-                                           self.t("kill_start_tooltip"), "killStart", "killStart", text_color=dark_red_text)
+            kill_start_label = f"{self.t('kill_start')} ({self.t('deprecated')})"
+            self.add_info_line_with_tooltip(fanatic_section, kill_start_label, kill_start,
+                                           self.t("kill_start_tooltip"), "killStart", "killStart", text_color="gray")
         
         # 1. 结局统计 + "查看达成条件"按钮
         endings = set(save_data.get("endings", []))
@@ -1917,21 +2392,22 @@ class SaveAnalyzer:
         }
         
         # 3. 贴纸统计 + "查看达成条件"按钮
-        stickers_section = self.create_section_with_button(
-            parent, 
-            self.t("stickers_statistics"), 
-            self.t("view_requirements"),
-            button_command=lambda: None,
-            title_key="stickers_statistics"
-        )
-        self._section_map["stickers_statistics"] = stickers_section
-        
         stickers = set(save_data.get("sticker", []))
         # 总共132个贴纸，编号1-133，没有82
         all_sticker_ids = set(range(1, 82)) | set(range(83, 134))  # 1-81, 83-133
         stickers_count = len(stickers)
         total_stickers = 132
         missing_stickers = sorted(all_sticker_ids - stickers)
+        collected_stickers = sorted(stickers)
+        
+        stickers_section = self.create_section_with_button(
+            parent, 
+            self.t("stickers_statistics"), 
+            self.t("view_requirements"),
+            button_command=lambda: self.show_stickers_requirements(save_data, stickers, collected_stickers, missing_stickers),
+            title_key="stickers_statistics"
+        )
+        self._section_map["stickers_statistics"] = stickers_section
         
         self.add_info_line(stickers_section, self.t("total_stickers"), total_stickers, None, "stickers.total")
         self.add_info_line(stickers_section, self.t("collected_stickers"), stickers_count, "sticker", "sticker.count")
@@ -2037,6 +2513,9 @@ class SaveAnalyzer:
         self.add_info_line(stats_section, self.t("judge_good"), good, "judgeCounts.good", "judgeCounts.good")
         self.add_info_line(stats_section, self.t("judge_bad"), bad, "judgeCounts.bad", "judgeCounts.bad")
         
+        secret_end_open = save_data.get("secretEndOpen", 0)
+        self.add_info_line(stats_section, self.t("secret_end_open"), secret_end_open, "secretEndOpen", "secretEndOpen")
+        
         epilogue = save_data.get("epilogue", 0)
         self.add_info_line(stats_section, self.t("epilogue_count"), epilogue, "epilogue", "epilogue")
         
@@ -2049,26 +2528,26 @@ class SaveAnalyzer:
                                        self.t("loop_record_tooltip"), "loopRecord", "loopRecord")
         
         # 如果不满足狂信徒线条件，在这里创建狂信徒相关section（正常位置）
-        if not is_zealot_route:
+        if not is_fanatic_route:
             # 6.5. 狂信徒相关
-            zealot_section = self.create_section(parent, self.t("zealot_related"), title_key="zealot_related")
-            self._section_map["zealot_related"] = zealot_section
+            fanatic_section = self.create_section(parent, self.t("fanatic_related"), title_key="fanatic_related")
+            self._section_map["fanatic_related"] = fanatic_section
             
             neo = save_data.get("NEO", 0)
-            self.add_info_line_with_tooltip(zealot_section, self.t("neo_value"), neo, 
+            self.add_info_line_with_tooltip(fanatic_section, self.t("neo_value"), neo, 
                                            self.t("neo_value_tooltip"), "NEO", "NEO")
             
             # 是否遭受拉米亚的诅咒
             lamia_noroi = save_data.get("Lamia_noroi", 0)
-            self.add_info_line(zealot_section, self.t("lamia_curse"), lamia_noroi, "Lamia_noroi", "Lamia_noroi")
+            self.add_info_line(fanatic_section, self.t("lamia_curse"), lamia_noroi, "Lamia_noroi", "Lamia_noroi")
             
             # 创伤值
             trauma = save_data.get("trauma", 0)
-            self.add_info_line(zealot_section, self.t("trauma_value"), trauma, "trauma", "trauma")
+            self.add_info_line(fanatic_section, self.t("trauma_value"), trauma, "trauma", "trauma")
             
             # killWarning - 狂信徒警告
             kill_warning = save_data.get("killWarning", 0)
-            self.add_info_line(zealot_section, self.t("kill_warning"), kill_warning, "killWarning", "killWarning")
+            self.add_info_line(fanatic_section, self.t("kill_warning"), kill_warning, "killWarning", "killWarning")
             
             # killed - 是否正在进行狂信徒线
             killed = save_data.get("killed", None)
@@ -2076,18 +2555,19 @@ class SaveAnalyzer:
                 killed_display = self.t("variable_not_exist")
             else:
                 killed_display = killed
-            self.add_info_line_with_tooltip(zealot_section, self.t("killed"), killed_display,
+            self.add_info_line_with_tooltip(fanatic_section, self.t("killed"), killed_display,
                                            self.t("killed_tooltip"), "killed", "killed")
             
             # kill - 狂信徒线完成数
             kill = save_data.get("kill", 0)
-            self.add_info_line_with_tooltip(zealot_section, self.t("kill_count"), kill,
+            self.add_info_line_with_tooltip(fanatic_section, self.t("kill_count"), kill,
                                            self.t("kill_count_tooltip"), "kill", "kill")
             
-            # killStart - 在狂信徒线中选择新开一局游戏的次数
+            # killStart - 在狂信徒线中选择新开一局游戏的次数（已废弃）
             kill_start = save_data.get("killStart", 0)
-            self.add_info_line_with_tooltip(zealot_section, self.t("kill_start"), kill_start,
-                                           self.t("kill_start_tooltip"), "killStart", "killStart")
+            kill_start_label = f"{self.t('kill_start')} ({self.t('deprecated')})"
+            self.add_info_line_with_tooltip(fanatic_section, kill_start_label, kill_start,
+                                           self.t("kill_start_tooltip"), "killStart", "killStart", text_color="gray")
         
         # 7. 角色信息
         character_section = self.create_section(parent, self.t("character_info"), title_key="character_info")
@@ -2108,6 +2588,12 @@ class SaveAnalyzer:
         hutanari = memory.get("hutanari", 0)
         self.add_info_line(character_section, self.t("hutanari"), hutanari, "memory.hutanari", "memory.hutanari")
         
+        camera_enable = memory.get("cameraEnable", 0)
+        self.add_info_line(character_section, self.t("camera_enable"), camera_enable, "memory.cameraEnable", "memory.cameraEnable")
+        
+        yubiwa = memory.get("yubiwa", 0)
+        self.add_info_line(character_section, self.t("yubiwa"), yubiwa, "memory.yubiwa", "memory.yubiwa")
+        
         # 8. 其他信息
         other_section = self.create_section(parent, self.t("other_info"), title_key="other_info")
         self._section_map["other_info"] = other_section
@@ -2120,15 +2606,6 @@ class SaveAnalyzer:
         
         desu = save_data.get("desu", 0)
         self.add_info_line(other_section, self.t("desu"), desu, "desu", "desu")
-        
-        hade = save_data.get("hade", 0)
-        self.add_info_line(other_section, self.t("hade"), hade, "hade", "hade")
-        
-        camera_enable = memory.get("cameraEnable", 0)
-        self.add_info_line(other_section, self.t("camera_enable"), camera_enable, "memory.cameraEnable", "memory.cameraEnable")
-        
-        yubiwa = memory.get("yubiwa", 0)
-        self.add_info_line(other_section, self.t("yubiwa"), yubiwa, "memory.yubiwa", "memory.yubiwa")
         
         autosave = save_data.get("system", {}).get("autosave", False)
         self.add_info_line(other_section, self.t("autosave_enabled"), autosave, "system.autosave", "system.autosave")
@@ -2210,6 +2687,111 @@ class SaveAnalyzer:
     
     def _update_save_info_incremental(self, save_data):
         """增量更新存档信息（不销毁重建widget）"""
+        # 验证关键 widget 是否仍然有效
+        # 如果 _widget_map 为空或关键 widget 无效，触发完整重建
+        if not self._widget_map:
+            self._is_initialized = False
+            self.display_save_info(self.scrollable_frame, save_data)
+            return
+        
+        # 检查第一个关键 widget 是否有效（作为快速验证）
+        first_key = next(iter(self._widget_map), None)
+        if first_key:
+            widget_info = self._widget_map.get(first_key)
+            if widget_info:
+                value_widget = widget_info.get('value_widget')
+                if not value_widget or not value_widget.winfo_exists():
+                    # widget 已无效，触发完整重建
+                    self._is_initialized = False
+                    self.display_save_info(self.scrollable_frame, save_data)
+                    return
+        
+        # 检查狂信徒线状态，如果需要则移动狂信徒section到最上面
+        kill = save_data.get("kill", None)
+        killed = save_data.get("killed", None)
+        kill_start = save_data.get("killStart", 0)
+        
+        is_fanatic_route = (
+            (kill is not None and kill == 1) or
+            (killed is not None and killed == 1) or
+            (kill_start is not None and kill_start > 0)
+        )
+        
+        # 如果满足狂信徒线条件，检查并移动狂信徒section到最上面
+        if is_fanatic_route:
+            fanatic_section = self._section_map.get("fanatic_related")
+            # 如果狂信徒section不存在，触发完整重建
+            if not fanatic_section or not fanatic_section.winfo_exists():
+                self._is_initialized = False
+                self.display_save_info(self.scrollable_frame, save_data)
+                return
+            if fanatic_section and fanatic_section.winfo_exists():
+                # 获取section_frame（content_frame的父widget）
+                section_frame = fanatic_section._section_frame if hasattr(fanatic_section, '_section_frame') else None
+                if section_frame and section_frame.winfo_exists():
+                    # 更新样式为狂信徒线样式（白色背景，深红色文字）
+                    dark_red_text = "#8b0000"
+                    section_frame.config(bg=Colors.WHITE)
+                    
+                    # 更新标题颜色
+                    title_widget_info = self._section_title_widgets.get("fanatic_related")
+                    if title_widget_info and title_widget_info.get('title_label'):
+                        title_label = title_widget_info['title_label']
+                        if title_label and title_label.winfo_exists():
+                            title_label.config(foreground=dark_red_text)
+                    
+                    # 更新狂信徒section中所有widget的文字颜色
+                    # 通过_widget_map更新已知的widget
+                    fanatic_widget_keys = ["NEO", "Lamia_noroi", "trauma", "killWarning", "killed", "kill", "killStart"]
+                    for widget_key in fanatic_widget_keys:
+                        widget_info = self._widget_map.get(widget_key)
+                        if widget_info:
+                            value_widget = widget_info.get('value_widget')
+                            label_widget = widget_info.get('label_widget')
+                            if value_widget and value_widget.winfo_exists():
+                                try:
+                                    value_widget.config(foreground=dark_red_text)
+                                except:
+                                    pass
+                            if label_widget and label_widget.winfo_exists():
+                                try:
+                                    label_widget.config(foreground=dark_red_text)
+                                except:
+                                    pass
+                    
+                    # 更新content_frame中所有Label类型的widget颜色（作为补充，确保所有Label都被更新）
+                    def update_label_colors(widget, color):
+                        """递归更新widget中所有Label的文字颜色"""
+                        try:
+                            if isinstance(widget, (tk.Label, ttk.Label)):
+                                # 跳过按钮等交互元素
+                                if not isinstance(widget.master, tk.Button) and not isinstance(widget.master, ttk.Button):
+                                    widget.config(foreground=color)
+                            elif isinstance(widget, tk.Frame):
+                                # 对于Frame，递归更新其子widget
+                                for child in widget.winfo_children():
+                                    update_label_colors(child, color)
+                        except:
+                            pass
+                    
+                    # 更新content_frame中的所有Label颜色
+                    update_label_colors(fanatic_section, dark_red_text)
+                    
+                    # 获取parent（scrollable_frame）的所有子widget
+                    parent = self.scrollable_frame
+                    if parent and parent.winfo_exists():
+                        children = list(parent.winfo_children())
+                        # 检查狂信徒section是否已经在最上面
+                        if children and children[0] != section_frame:
+                            # 不在最上面，需要移动
+                            # 先移除
+                            section_frame.pack_forget()
+                            # 重新pack到最上面（使用before参数）
+                            if children:
+                                section_frame.pack(fill="x", padx=10, pady=5, before=children[0])
+                            else:
+                                section_frame.pack(fill="x", padx=10, pady=5)
+        
         memory = save_data.get("memory", {})
         
         # 更新角色信息
@@ -2227,6 +2809,12 @@ class SaveAnalyzer:
         
         hutanari = memory.get("hutanari", 0)
         self.add_info_line(None, self.t("hutanari"), hutanari, "memory.hutanari", "memory.hutanari")
+        
+        camera_enable = memory.get("cameraEnable", 0)
+        self.add_info_line(None, self.t("camera_enable"), camera_enable, "memory.cameraEnable", "memory.cameraEnable")
+        
+        yubiwa = memory.get("yubiwa", 0)
+        self.add_info_line(None, self.t("yubiwa"), yubiwa, "memory.yubiwa", "memory.yubiwa")
         
         # 更新结局统计
         endings = set(save_data.get("endings", []))
@@ -2330,6 +2918,9 @@ class SaveAnalyzer:
         self.add_info_line(None, self.t("judge_good"), good, "judgeCounts.good", "judgeCounts.good")
         self.add_info_line(None, self.t("judge_bad"), bad, "judgeCounts.bad", "judgeCounts.bad")
         
+        secret_end_open = save_data.get("secretEndOpen", 0)
+        self.add_info_line(None, self.t("secret_end_open"), secret_end_open, "secretEndOpen", "secretEndOpen")
+        
         epilogue = save_data.get("epilogue", 0)
         self.add_info_line(None, self.t("epilogue_count"), epilogue, "epilogue", "epilogue")
         
@@ -2367,8 +2958,9 @@ class SaveAnalyzer:
                                        self.t("kill_count_tooltip"), "kill", "kill")
         
         kill_start = save_data.get("killStart", 0)
-        self.add_info_line_with_tooltip(None, self.t("kill_start"), kill_start,
-                                       self.t("kill_start_tooltip"), "killStart", "killStart")
+        kill_start_label = f"{self.t('kill_start')} ({self.t('deprecated')})"
+        self.add_info_line_with_tooltip(None, kill_start_label, kill_start,
+                                       self.t("kill_start_tooltip"), "killStart", "killStart", text_color="gray")
         
         # 更新其他信息
         save_list_no = save_data.get("saveListNo", 0)
@@ -2378,15 +2970,6 @@ class SaveAnalyzer:
         
         desu = save_data.get("desu", 0)
         self.add_info_line(None, self.t("desu"), desu, "desu", "desu")
-        
-        hade = save_data.get("hade", 0)
-        self.add_info_line(None, self.t("hade"), hade, "hade", "hade")
-        
-        camera_enable = memory.get("cameraEnable", 0)
-        self.add_info_line(None, self.t("camera_enable"), camera_enable, "memory.cameraEnable", "memory.cameraEnable")
-        
-        yubiwa = memory.get("yubiwa", 0)
-        self.add_info_line(None, self.t("yubiwa"), yubiwa, "memory.yubiwa", "memory.yubiwa")
         
         autosave = save_data.get("system", {}).get("autosave", False)
         self.add_info_line(None, self.t("autosave_enabled"), autosave, "system.autosave", "system.autosave")
@@ -2902,9 +3485,10 @@ class SaveAnalyzer:
         toolbar_right.pack(side="right", padx=5)
         
         # 添加刷新按钮
-        def check_unsaved_changes():
+        def check_unsaved_changes(force_check=False):
             """检查是否有未保存的修改，如果有则弹出确认提示"""
-            if enable_edit_var.get():
+            # 如果强制检查（关闭编辑模式时），或者当前编辑模式已开启
+            if force_check or enable_edit_var.get():
                 current_content = text_widget.get("1.0", "end-1c")
                 if current_content != original_content:
                     # 有未保存的修改，弹出确认提示
@@ -2925,8 +3509,24 @@ class SaveAnalyzer:
                 # 用户取消关闭，阻止窗口关闭
                 return
             viewer_window.destroy()
-            # 窗口关闭后，刷新存档分析页面
-            self.refresh()
+            # 使用延迟刷新，确保窗口销毁完成后再刷新
+            # 这样可以避免 Tkinter 内部状态不一致的问题
+            # 强制完整重建以避免增量更新可能导致的问题
+            def delayed_refresh():
+                # 强制完整重建：将 _is_initialized 设为 False
+                self._is_initialized = False
+                # 清除 widget 映射，强制重新创建
+                self._widget_map.clear()
+                self._section_map.clear()
+                self._dynamic_widgets.clear()
+                self._section_title_widgets.clear()
+                self.var_name_widgets.clear()
+                # 清除统计面板 widget 引用
+                if hasattr(self, '_stats_widgets'):
+                    self._stats_widgets.clear()
+                self.refresh()
+            
+            self.window.after(100, delayed_refresh)
         
         viewer_window.protocol("WM_DELETE_WINDOW", on_window_close)
         
@@ -3065,7 +3665,8 @@ class SaveAnalyzer:
             """切换编辑模式"""
             # 如果取消勾选"开启修改"，检查是否有未保存的修改
             if not enable_edit_var.get():
-                if not check_unsaved_changes():
+                # 强制检查未保存的修改（即使编辑模式已关闭）
+                if not check_unsaved_changes(force_check=True):
                     # 用户取消操作，恢复勾选状态
                     enable_edit_var.set(True)
                     return
@@ -3175,8 +3776,53 @@ class SaveAnalyzer:
         
         search_entry.bind("<Return>", on_search_enter)
     
-    def show_endings_requirements(self, save_data, endings, collected_endings, missing_endings):
-        """显示结局达成条件窗口"""
+    def _create_rounded_rect(self, canvas, x1, y1, x2, y2, radius, **kwargs):
+        """在Canvas上绘制圆角矩形"""
+        points = [
+            x1 + radius, y1,
+            x2 - radius, y1,
+            x2, y1,
+            x2, y1 + radius,
+            x2, y2 - radius,
+            x2, y2,
+            x2 - radius, y2,
+            x1 + radius, y2,
+            x1, y2,
+            x1, y2 - radius,
+            x1, y1 + radius,
+            x1, y1,
+            x1 + radius, y1,
+        ]
+        return canvas.create_polygon(points, smooth=True, **kwargs)
+    
+    def _wrap_text(self, text, font, max_width, canvas):
+        """计算文本换行，返回行列表"""
+        words = text
+        lines = []
+        current_line = ""
+        
+        for char in words:
+            test_line = current_line + char
+            # 创建临时文本来测量宽度
+            temp_id = canvas.create_text(0, 0, text=test_line, font=font, anchor="nw")
+            bbox = canvas.bbox(temp_id)
+            canvas.delete(temp_id)
+            
+            if bbox and (bbox[2] - bbox[0]) > max_width:
+                if current_line:
+                    lines.append(current_line)
+                current_line = char
+            else:
+                current_line = test_line
+        
+        if current_line:
+            lines.append(current_line)
+        
+        return lines if lines else [text]
+    
+    def _show_requirements_canvas(self, title_key, hint_key, items, collected_set, 
+                                   id_prefix, window_title_suffix, is_sticker=False):
+        """通用的Canvas卡片式达成条件显示窗口"""
         # 获取根窗口
         root_window = self.window
         while not isinstance(root_window, tk.Tk) and hasattr(root_window, 'master'):
@@ -3184,134 +3830,185 @@ class SaveAnalyzer:
         
         # 创建新窗口
         requirements_window = tk.Toplevel(root_window)
-        requirements_window.title(self.t("endings_statistics") + " - " + self.t("view_requirements"))
-        requirements_window.geometry("800x600")
+        requirements_window.title(self.t(title_key) + " - " + self.t("view_requirements"))
+        requirements_window.geometry("850x650")
+        requirements_window.configure(bg="#f5f5f7")
         set_window_icon(requirements_window)
         
+        # 设计参数
+        CARD_PADDING = 16
+        CARD_RADIUS = 12
+        CARD_MARGIN = 12
+        CARD_WIDTH = 780
+        SHADOW_OFFSET = 3
+        
+        # 配色方案 - 更现代柔和的颜色
+        COLORS = {
+            'bg': '#f5f5f7',
+            'missing_card': '#fff0f3',
+            'missing_border': '#ffb3c1',
+            'missing_shadow': '#ffd6e0',
+            'missing_title': '#c9184a',
+            'missing_status': '#ff4d6d',
+            'missing_text': '#590d22',
+            'collected_card': '#f0fdf4',
+            'collected_border': '#86efac',
+            'collected_shadow': '#bbf7d0',
+            'collected_title': '#15803d',
+            'collected_status': '#22c55e',
+            'collected_text': '#14532d',
+            'header_bg': '#ffffff',
+            'header_text': '#1f2937',
+            'hint_text': '#dc2626',
+        }
+        
+        # 字体
+        font_title = get_cjk_font(16, "bold")
+        font_hint = get_cjk_font(12, "bold")
+        font_card_title = get_cjk_font(13, "bold")
+        font_card_status = get_cjk_font(10, "bold")
+        font_card_text = get_cjk_font(10)
+        
         # 创建主框架
-        main_frame = tk.Frame(requirements_window, bg=Colors.WHITE)
-        main_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        main_frame = tk.Frame(requirements_window, bg=COLORS['bg'])
+        main_frame.pack(fill="both", expand=True)
+        
+        # 创建顶部标题区域（固定）
+        header_frame = tk.Frame(main_frame, bg=COLORS['header_bg'], height=80)
+        header_frame.pack(fill="x", padx=0, pady=0)
+        header_frame.pack_propagate(False)
+        
+        # 分离数据
+        missing_list = [(item_id, cond) for item_id, cond in items if item_id not in collected_set]
+        collected_list = [(item_id, cond) for item_id, cond in items if item_id in collected_set]
+        
+        # 标题
+        title_text = self.t(title_key) + " - " + self.t("view_requirements")
+        title_label = tk.Label(header_frame, text=title_text, font=font_title, 
+                              bg=COLORS['header_bg'], fg=COLORS['header_text'])
+        title_label.pack(anchor="w", padx=20, pady=(15, 5))
+        
+        # 统计信息
+        stats_text = f"✓ {self.t('collected_endings') if not is_sticker else self.t('collected_stickers')}: {len(collected_list)}    "
+        if missing_list:
+            stats_text += f"⚠ {self.t('missing_endings') if not is_sticker else self.t('missing_stickers_count')}: {len(missing_list)}"
+        stats_label = tk.Label(header_frame, text=stats_text, font=font_hint,
+                              bg=COLORS['header_bg'], fg=COLORS['hint_text'] if missing_list else COLORS['collected_title'])
+        stats_label.pack(anchor="w", padx=20, pady=(0, 10))
+        
+        # 分隔线
+        separator = tk.Frame(main_frame, height=1, bg='#e5e7eb')
+        separator.pack(fill="x")
         
         # 创建滚动区域
-        canvas = tk.Canvas(main_frame, bg=Colors.WHITE)
-        scrollable_frame = tk.Frame(canvas, bg=Colors.WHITE)
+        scroll_frame = tk.Frame(main_frame, bg=COLORS['bg'])
+        scroll_frame.pack(fill="both", expand=True)
         
-        scrollbar = Scrollbar(main_frame, orient="vertical", command=canvas.yview)
+        canvas = tk.Canvas(scroll_frame, bg=COLORS['bg'], highlightthickness=0)
+        scrollbar = Scrollbar(scroll_frame, orient="vertical", command=canvas.yview)
         canvas.configure(yscrollcommand=scrollbar.set)
         
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-        
-        def update_scrollregion(event=None):
-            canvas.configure(scrollregion=canvas.bbox("all"))
-        
-        scrollable_frame.bind("<Configure>", update_scrollregion)
-        
-        # 获取所有结局ID（1-45）
-        all_ending_ids = [str(i) for i in range(1, 46)]
-        
-        # 将 missing_endings 转换为集合以便快速查找
-        missing_endings_set = set(missing_endings)
-        collected_endings_set = set(collected_endings)
-        
-        # 分离已达成和未达成的结局
-        collected_list = []
-        missing_list = []
-        
-        for ending_id in all_ending_ids:
-            ending_key = f"END{ending_id}_unlock_cond"
-            condition_text = self.t(ending_key)
-            
-            # 判断是否为未达成的结局
-            # 如果结局不在 collected_endings 中，则视为未达成
-            if ending_id not in collected_endings_set:
-                # 未达成的结局
-                missing_list.append((ending_id, condition_text))
-            else:
-                # 已达成的结局
-                collected_list.append((ending_id, condition_text))
-        
-        # 先显示未达成的结局（突出显示），然后显示已达成的结局
-        display_order = missing_list + collected_list
-        
-        # 创建标题
-        title_label = ttk.Label(scrollable_frame, 
-                               text=self.t("endings_statistics") + " - " + self.t("view_requirements"),
-                               font=get_cjk_font(14, "bold"))
-        title_label.pack(anchor="w", pady=(0, 10))
-        
-        # 如果有未达成的结局，添加提示
-        if missing_list:
-            hint_label = ttk.Label(scrollable_frame,
-                                 text=f"⚠ {self.t('missing_endings')}: {len(missing_list)}",
-                                 font=get_cjk_font(11, "bold"),
-                                 foreground="red")
-            hint_label.pack(anchor="w", pady=(0, 10))
-        
-        # 显示所有结局
-        for ending_id, condition_text in display_order:
-            # 创建每个结局的框架
-            ending_frame = tk.Frame(scrollable_frame, bg=Colors.WHITE, relief="ridge", borderwidth=1)
-            ending_frame.pack(fill="x", pady=5, padx=5)
-            
-            # 判断是否为未达成的结局
-            is_missing = ending_id not in collected_endings_set
-            
-            # 设置背景色和字体样式
-            if is_missing:
-                # 未达成的结局：使用浅红色背景，加粗字体
-                ending_frame.config(bg="#ffe6e6")
-                title_bg = "#ffe6e6"
-                title_fg = "red"
-                title_font = get_cjk_font(11, "bold")
-            else:
-                # 已达成的结局：使用浅绿色背景，普通字体
-                ending_frame.config(bg="#e6ffe6")
-                title_bg = "#e6ffe6"
-                title_fg = "green"
-                title_font = get_cjk_font(11, "normal")
-            
-            # 结局标题
-            title_frame = tk.Frame(ending_frame, bg=title_bg)
-            title_frame.pack(fill="x", padx=5, pady=5)
-            
-            ending_title = ttk.Label(title_frame, 
-                                    text=f"END{ending_id}",
-                                    font=title_font,
-                                    foreground=title_fg,
-                                    background=title_bg)
-            ending_title.pack(side="left", padx=5)
-            
-            # 状态标签
-            if is_missing:
-                status_label = ttk.Label(title_frame,
-                                       text="❌ " + self.t("missing_endings"),
-                                       font=get_cjk_font(10, "bold"),
-                                       foreground="red",
-                                       background=title_bg)
-            else:
-                status_label = ttk.Label(title_frame,
-                                       text="✓ " + self.t("collected_endings"),
-                                       font=get_cjk_font(10, "normal"),
-                                       foreground="green",
-                                       background=title_bg)
-            status_label.pack(side="right", padx=5)
-            
-            # 达成条件文本
-            condition_frame = tk.Frame(ending_frame, bg=title_bg)
-            condition_frame.pack(fill="x", padx=10, pady=(0, 5))
-            
-            wraplength = 700
-            condition_label = ttk.Label(condition_frame,
-                                        text=condition_text,
-                                        font=get_cjk_font(10),
-                                        wraplength=wraplength,
-                                        justify="left",
-                                        background=title_bg)
-            condition_label.pack(anchor="w", padx=5)
-        
-        # 布局滚动条和画布
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
+        
+        # 计算内容高度并绘制卡片
+        display_order = missing_list + collected_list
+        
+        # 先计算所有卡片的布局
+        y_offset = 20
+        card_data = []
+        
+        for item_id, condition_text in display_order:
+            is_missing = item_id not in collected_set
+            
+            # 计算文本换行后的行数
+            wrapped_lines = self._wrap_text(condition_text, font_card_text, CARD_WIDTH - CARD_PADDING * 2 - 20, canvas)
+            line_height = 18
+            text_height = len(wrapped_lines) * line_height
+            
+            # 卡片高度 = 标题区域 + 文本区域 + padding
+            card_height = 40 + text_height + CARD_PADDING * 2
+            
+            card_data.append({
+                'item_id': item_id,
+                'condition_text': condition_text,
+                'wrapped_lines': wrapped_lines,
+                'is_missing': is_missing,
+                'y': y_offset,
+                'height': card_height
+            })
+            
+            y_offset += card_height + CARD_MARGIN
+        
+        total_height = y_offset + 20
+        
+        # 设置Canvas滚动区域
+        canvas.configure(scrollregion=(0, 0, CARD_WIDTH + 40, total_height))
+        
+        # 绘制所有卡片
+        for card in card_data:
+            is_missing = card['is_missing']
+            y = card['y']
+            h = card['height']
+            
+            # 选择配色
+            if is_missing:
+                card_color = COLORS['missing_card']
+                border_color = COLORS['missing_border']
+                shadow_color = COLORS['missing_shadow']
+                title_color = COLORS['missing_title']
+                status_color = COLORS['missing_status']
+                text_color = COLORS['missing_text']
+                status_text = "❌ " + (self.t("status_missing_ending") if not is_sticker else self.t("status_missing_sticker"))
+            else:
+                card_color = COLORS['collected_card']
+                border_color = COLORS['collected_border']
+                shadow_color = COLORS['collected_shadow']
+                title_color = COLORS['collected_title']
+                status_color = COLORS['collected_status']
+                text_color = COLORS['collected_text']
+                status_text = "✓ " + (self.t("status_collected_ending") if not is_sticker else self.t("status_collected_sticker"))
+            
+            x1, y1 = 25, y
+            x2, y2 = 25 + CARD_WIDTH, y + h
+            
+            # 绘制阴影
+            self._create_rounded_rect(canvas, 
+                                     x1 + SHADOW_OFFSET, y1 + SHADOW_OFFSET, 
+                                     x2 + SHADOW_OFFSET, y2 + SHADOW_OFFSET, 
+                                     CARD_RADIUS, fill=shadow_color, outline="")
+            
+            # 绘制卡片边框
+            self._create_rounded_rect(canvas, x1 - 1, y1 - 1, x2 + 1, y2 + 1, 
+                                     CARD_RADIUS, fill=border_color, outline="")
+            
+            # 绘制卡片主体
+            self._create_rounded_rect(canvas, x1, y1, x2, y2, 
+                                     CARD_RADIUS, fill=card_color, outline="")
+            
+            # 绘制标题
+            title_text = f"{id_prefix}{card['item_id']}"
+            canvas.create_text(x1 + CARD_PADDING, y1 + CARD_PADDING, 
+                             text=title_text, font=font_card_title, 
+                             fill=title_color, anchor="nw")
+            
+            # 绘制状态（右侧）
+            canvas.create_text(x2 - CARD_PADDING, y1 + CARD_PADDING, 
+                             text=status_text, font=font_card_status, 
+                             fill=status_color, anchor="ne")
+            
+            # 绘制分隔线
+            line_y = y1 + 40
+            canvas.create_line(x1 + CARD_PADDING, line_y, x2 - CARD_PADDING, line_y, 
+                             fill=border_color, width=1)
+            
+            # 绘制达成条件文本（多行）
+            text_y = line_y + 12
+            for line in card['wrapped_lines']:
+                canvas.create_text(x1 + CARD_PADDING, text_y, 
+                                 text=line, font=font_card_text, 
+                                 fill=text_color, anchor="nw")
+                text_y += 18
         
         # 绑定鼠标滚轮
         def on_mousewheel(event):
@@ -3330,7 +4027,56 @@ class SaveAnalyzer:
         canvas.bind("<Button-4>", on_mousewheel)
         canvas.bind("<Button-5>", on_mousewheel)
         
-        # 更新滚动区域
-        requirements_window.update_idletasks()
-        canvas.configure(scrollregion=canvas.bbox("all"))
+        # 绑定整个窗口的滚轮事件
+        requirements_window.bind("<MouseWheel>", on_mousewheel)
+        requirements_window.bind("<Button-4>", on_mousewheel)
+        requirements_window.bind("<Button-5>", on_mousewheel)
+
+    def show_endings_requirements(self, save_data, endings, collected_endings, missing_endings):
+        """显示结局达成条件窗口 - 使用Canvas绘制高级卡片UI"""
+        # 获取所有结局ID（1-45）
+        all_ending_ids = [str(i) for i in range(1, 46)]
+        collected_endings_set = set(collected_endings)
+        
+        # 准备数据
+        items = []
+        for ending_id in all_ending_ids:
+            ending_key = f"END{ending_id}_unlock_cond"
+            condition_text = self.t(ending_key)
+            items.append((ending_id, condition_text))
+        
+        # 调用通用方法
+        self._show_requirements_canvas(
+            title_key="endings_statistics",
+            hint_key="missing_endings",
+            items=items,
+            collected_set=collected_endings_set,
+            id_prefix="END",
+            window_title_suffix="endings",
+            is_sticker=False
+        )
+    
+    def show_stickers_requirements(self, save_data, stickers, collected_stickers, missing_stickers):
+        """显示贴纸达成条件窗口 - 使用Canvas绘制高级卡片UI"""
+        # 获取所有贴纸ID（1-81, 83-133，没有82）
+        all_sticker_ids = [str(i) for i in range(1, 82)] + [str(i) for i in range(83, 134)]
+        collected_stickers_set = set(str(s) for s in collected_stickers)
+        
+        # 准备数据
+        items = []
+        for sticker_id in all_sticker_ids:
+            sticker_key = f"STICKER{sticker_id}_unlock_cond"
+            condition_text = self.t(sticker_key)
+            items.append((sticker_id, condition_text))
+        
+        # 调用通用方法
+        self._show_requirements_canvas(
+            title_key="stickers_statistics",
+            hint_key="missing_stickers_count",
+            items=items,
+            collected_set=collected_stickers_set,
+            id_prefix="#",
+            window_title_suffix="stickers",
+            is_sticker=True
+        )
 

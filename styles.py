@@ -1,5 +1,4 @@
 # styles.py
-# 统一的样式管理模块，解决文字底色问题和性能优化
 
 import tkinter as tk
 from tkinter import ttk
@@ -41,7 +40,6 @@ def get_cjk_font(size=10, weight="normal"):
 # =====================================================
 
 class Colors:
-    """应用颜色常量"""
     # 主要背景色
     WHITE = "#ffffff"
     LIGHT_GRAY = "#fafafa"
@@ -133,7 +131,6 @@ def init_styles(root=None):
     style.map("TCheckbutton",
              background=[("active", Colors.WHITE), ("!active", Colors.WHITE)])
     
-    # 灰色背景的 Checkbutton
     style.configure("Gray.TCheckbutton",
                    background=Colors.LIGHT_GRAY,
                    borderwidth=0,

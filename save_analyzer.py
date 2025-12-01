@@ -72,7 +72,7 @@ class SaveAnalyzer:
         # 设置初始宽度，确保方框从一开始就有正确的宽度
         scrollable_frame.config(width=self._cached_width)
         
-        # 性能优化：延迟更新scrollregion，使用防抖机制
+        # 延迟更新scrollregion，使用防抖机制，否则卡
         self._scroll_update_pending = False
         self._scroll_retry_count = 0  # 重试计数器，避免无限重试
         def update_scrollregion():
@@ -220,7 +220,7 @@ class SaveAnalyzer:
         main_paned.add(right_frame, width=400, minsize=200)
         self._right_frame = right_frame
         
-        # 性能优化：使用防抖机制设置PanedWindow比例（固定2:1）
+        # 使用防抖机制设置PanedWindow比例（固定2:1）
         self._paned_update_pending = False
         def set_paned_ratio(event=None):
             if self._paned_update_pending:
@@ -923,12 +923,10 @@ class SaveAnalyzer:
         # 检查狂信徒线条件
         kill = save_data.get("kill", None)
         killed = save_data.get("killed", None)
-        kill_start = save_data.get("killStart", 0)
         
         is_fanatic_route = (
             (kill is not None and kill == 1) or
-            (killed is not None and killed == 1) or
-            (kill_start is not None and kill_start > 0)
+            (killed is not None and killed == 1)
         )
         
         # 计算统计数据
@@ -1362,12 +1360,10 @@ class SaveAnalyzer:
         # 检查狂信徒线条件
         kill = save_data.get("kill", None)
         killed = save_data.get("killed", None)
-        kill_start = save_data.get("killStart", 0)
         
         is_fanatic_route = (
             (kill is not None and kill == 1) or
-            (killed is not None and killed == 1) or
-            (kill_start is not None and kill_start > 0)
+            (killed is not None and killed == 1)
         )
         
         # 计算统计数据
@@ -2225,7 +2221,7 @@ class SaveAnalyzer:
                 'label_widget': label_widget
             })
         
-        # 性能优化：使用缓存的宽度
+        # 使用缓存的宽度
         wraplength = int(self._cached_width * 0.7)
         
         value_widget = ttk.Label(line_frame, text=str(value), font=get_cjk_font(10), 
@@ -2307,12 +2303,10 @@ class SaveAnalyzer:
         # 检查狂信徒线条件
         kill = save_data.get("kill", None)
         killed = save_data.get("killed", None)
-        kill_start = save_data.get("killStart", 0)
         
         is_fanatic_route = (
             (kill is not None and kill == 1) or
-            (killed is not None and killed == 1) or
-            (kill_start is not None and kill_start > 0)
+            (killed is not None and killed == 1)
         )
         
         # 如果满足狂信徒线条件，先创建狂信徒section（移到最顶端）
@@ -2353,12 +2347,6 @@ class SaveAnalyzer:
             kill = save_data.get("kill", 0)
             self.add_info_line_with_tooltip(fanatic_section, self.t("kill_count"), kill,
                                            self.t("kill_count_tooltip"), "kill", "kill", text_color=dark_red_text)
-            
-            # killStart - 在狂信徒线中选择新开一局游戏的次数（已废弃）
-            kill_start = save_data.get("killStart", 0)
-            kill_start_label = f"{self.t('kill_start')} ({self.t('deprecated')})"
-            self.add_info_line_with_tooltip(fanatic_section, kill_start_label, kill_start,
-                                           self.t("kill_start_tooltip"), "killStart", "killStart", text_color="gray")
         
         # 1. 结局统计 + "查看达成条件"按钮
         endings = set(save_data.get("endings", []))
@@ -2516,6 +2504,9 @@ class SaveAnalyzer:
         secret_end_open = save_data.get("secretEndOpen", 0)
         self.add_info_line(stats_section, self.t("secret_end_open"), secret_end_open, "secretEndOpen", "secretEndOpen")
         
+        true_count = save_data.get("trueCount", 0)
+        self.add_info_line(stats_section, self.t("true_count"), true_count, "trueCount", "trueCount")
+        
         epilogue = save_data.get("epilogue", 0)
         self.add_info_line(stats_section, self.t("epilogue_count"), epilogue, "epilogue", "epilogue")
         
@@ -2562,12 +2553,6 @@ class SaveAnalyzer:
             kill = save_data.get("kill", 0)
             self.add_info_line_with_tooltip(fanatic_section, self.t("kill_count"), kill,
                                            self.t("kill_count_tooltip"), "kill", "kill")
-            
-            # killStart - 在狂信徒线中选择新开一局游戏的次数（已废弃）
-            kill_start = save_data.get("killStart", 0)
-            kill_start_label = f"{self.t('kill_start')} ({self.t('deprecated')})"
-            self.add_info_line_with_tooltip(fanatic_section, kill_start_label, kill_start,
-                                           self.t("kill_start_tooltip"), "killStart", "killStart", text_color="gray")
         
         # 7. 角色信息
         character_section = self.create_section(parent, self.t("character_info"), title_key="character_info")
@@ -2709,12 +2694,10 @@ class SaveAnalyzer:
         # 检查狂信徒线状态，如果需要则移动狂信徒section到最上面
         kill = save_data.get("kill", None)
         killed = save_data.get("killed", None)
-        kill_start = save_data.get("killStart", 0)
         
         is_fanatic_route = (
             (kill is not None and kill == 1) or
-            (killed is not None and killed == 1) or
-            (kill_start is not None and kill_start > 0)
+            (killed is not None and killed == 1)
         )
         
         # 如果满足狂信徒线条件，检查并移动狂信徒section到最上面
@@ -2742,7 +2725,7 @@ class SaveAnalyzer:
                     
                     # 更新狂信徒section中所有widget的文字颜色
                     # 通过_widget_map更新已知的widget
-                    fanatic_widget_keys = ["NEO", "Lamia_noroi", "trauma", "killWarning", "killed", "kill", "killStart"]
+                    fanatic_widget_keys = ["NEO", "Lamia_noroi", "trauma", "killWarning", "killed", "kill"]
                     for widget_key in fanatic_widget_keys:
                         widget_info = self._widget_map.get(widget_key)
                         if widget_info:
@@ -2921,6 +2904,9 @@ class SaveAnalyzer:
         secret_end_open = save_data.get("secretEndOpen", 0)
         self.add_info_line(None, self.t("secret_end_open"), secret_end_open, "secretEndOpen", "secretEndOpen")
         
+        true_count = save_data.get("trueCount", 0)
+        self.add_info_line(None, self.t("true_count"), true_count, "trueCount", "trueCount")
+        
         epilogue = save_data.get("epilogue", 0)
         self.add_info_line(None, self.t("epilogue_count"), epilogue, "epilogue", "epilogue")
         
@@ -2956,11 +2942,6 @@ class SaveAnalyzer:
         kill = save_data.get("kill", 0)
         self.add_info_line_with_tooltip(None, self.t("kill_count"), kill,
                                        self.t("kill_count_tooltip"), "kill", "kill")
-        
-        kill_start = save_data.get("killStart", 0)
-        kill_start_label = f"{self.t('kill_start')} ({self.t('deprecated')})"
-        self.add_info_line_with_tooltip(None, kill_start_label, kill_start,
-                                       self.t("kill_start_tooltip"), "killStart", "killStart", text_color="gray")
         
         # 更新其他信息
         save_list_no = save_data.get("saveListNo", 0)

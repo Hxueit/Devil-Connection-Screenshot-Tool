@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import filedialog, messagebox, Scrollbar, Toplevel, Entry, Label
+from tkinter import filedialog, messagebox, Scrollbar, Toplevel, Entry, Label, simpledialog
 from tkinter import ttk
 from PIL import Image
 from PIL import ImageTk
@@ -29,6 +29,7 @@ from toast import Toast
 from styles import get_cjk_font, get_parent_bg, init_styles, Colors, Debouncer
 
 # From the sky bereft of stars
+
 if platform.system() == "Windows":
     try:
         import winreg
@@ -43,12 +44,12 @@ class SavTool:
         self.translations = TRANSLATIONS
         self.current_language = self.detect_system_language()
         self.root.title(self.t("window_title"))
-        self.root.geometry("800x600")
+        self.root.geometry("850x600")
         
         # 设置窗口图标
         set_window_icon(self.root)
         
-        # 初始化统一样式（解决文字底色问题）
+        # 初始化统一样式
         init_styles(self.root)
 
         self.menubar = tk.Menu(root)
@@ -115,8 +116,8 @@ class SavTool:
         list_header_frame.columnconfigure(0, weight=1)  
         list_header_frame.columnconfigure(2, weight=1)  
         
-        left_spacer = tk.Frame(list_header_frame)
-        left_spacer.grid(row=0, column=0, sticky="ew")
+        left_spacer_I_should_have_used_rust_nogettkinterherat = tk.Frame(list_header_frame)
+        left_spacer_I_should_have_used_rust_nogettkinterherat.grid(row=0, column=0, sticky="ew")
         
         # 左侧：标题（全选复选框在Treeview的header中）
         left_header = tk.Frame(list_header_frame)
@@ -129,8 +130,8 @@ class SavTool:
         right_area.grid(row=0, column=2, sticky="ew")
         right_area.columnconfigure(0, weight=1) 
         
-        right_spacer = tk.Frame(right_area)
-        right_spacer.grid(row=0, column=0, sticky="ew")
+        right_spacer_eeeeeeeeeeee = tk.Frame(right_area)
+        right_spacer_eeeeeeeeeeee.grid(row=0, column=0, sticky="ew")
         
         # 右侧按钮区域
         button_container = tk.Frame(right_area)
@@ -148,7 +149,6 @@ class SavTool:
         # 预览区域（左侧）
         preview_frame = tk.Frame(list_frame, bg=Colors.WHITE)
         preview_frame.pack(side="left", padx=5)
-        # 使用 tk.Label 并设置与父容器相同的背景色，避免底色问题
         self.preview_label_text = tk.Label(preview_frame, text=self.t("preview"), 
                                           font=get_cjk_font(10), bg=Colors.WHITE)
         self.preview_label_text.pack()
@@ -275,14 +275,14 @@ class SavTool:
         self.monitor_running = False  # 监控运行标志
         self.active_toasts = []  # 活跃的toast列表
         self.variable_change_chains = {}  # 变量变化链追踪 {变量名: {"chain": [值1, 值2, ...], "toast": toast实例}}
-        self.ab_initio_triggered = False  # AB INITIO是否已触发
+        self.ab_initio_triggered = False  # AB INITIO是否已触发（狂信徒删档时程序小彩蛋）
         
         # 默认显示存档分析 tab（索引 0）
         self.notebook.select(0)
     
     def detect_system_language(self):
         """检测系统语言并返回支持的语言代码"""
-        # 优先使用 locale.getdefaultlocale 检测（虽然已弃用，但就经验来说更可靠）
+        # 优先使用 locale.getdefaultlocale 检测（虽然已弃用但是应该更可靠）
         try:
             default_locale = locale.getdefaultlocale()
             if default_locale[0]:
@@ -521,6 +521,12 @@ class SavTool:
         self.delete_backup_button.pack(side="left", padx=5)
         self.delete_backup_button.pack_forget()
         
+        # 重命名按钮（初始隐藏）
+        self.rename_backup_button = ttk.Button(button_area, text=self.t("rename_backup_button"), 
+                                                command=self.rename_backup)
+        self.rename_backup_button.pack(side="left", padx=5)
+        self.rename_backup_button.pack_forget()
+        
         # 存储选中的备份路径
         self.selected_backup_path = None
         
@@ -652,10 +658,12 @@ class SavTool:
                 self.selected_backup_path = tags[0]
                 self.restore_button.pack(side="left", padx=5)
                 self.delete_backup_button.pack(side="left", padx=5)
+                self.rename_backup_button.pack(side="left", padx=5)
         else:
             self.selected_backup_path = None
             self.restore_button.pack_forget()
             self.delete_backup_button.pack_forget()
+            self.rename_backup_button.pack_forget()
     
     def delete_backup(self):
         """删除备份"""
@@ -685,10 +693,61 @@ class SavTool:
             self.selected_backup_path = None
             self.restore_button.pack_forget()
             self.delete_backup_button.pack_forget()
+            self.rename_backup_button.pack_forget()
             # 刷新备份列表
             self.refresh_backup_list()
         else:
             messagebox.showerror(self.t("error"), self.t("delete_backup_failed"))
+    
+    def rename_backup(self):
+        """重命名备份"""
+        if not self.selected_backup_path:
+            return
+        
+        if not self.backup_restore:
+            return
+        
+        # 获取当前文件名（不含扩展名）
+        current_filename = os.path.basename(self.selected_backup_path)
+        current_name_without_ext = os.path.splitext(current_filename)[0]
+        
+        # 创建输入对话框
+        new_filename = simpledialog.askstring(
+            self.t("rename_backup_title"),
+            self.t("rename_backup_prompt", filename=current_filename),
+            initialvalue=current_name_without_ext
+        )
+        
+        if not new_filename:
+            return
+        
+        # 去除首尾空格
+        new_filename = new_filename.strip()
+        
+        if not new_filename:
+            messagebox.showerror(self.t("error"), self.t("rename_backup_empty"))
+            return
+        
+        # 检查文件名是否包含非法字符
+        invalid_chars = '<>:"/\\|?*'
+        if any(char in new_filename for char in invalid_chars):
+            messagebox.showerror(self.t("error"), self.t("rename_backup_invalid_chars"))
+            return
+        
+        # 执行重命名
+        result = self.backup_restore.rename_backup(self.selected_backup_path, new_filename)
+        
+        if result:
+            new_path, old_filename = result
+            messagebox.showinfo(self.t("success"), self.t("rename_backup_success", 
+                                                         old_filename=old_filename,
+                                                         new_filename=os.path.basename(new_path)))
+            # 更新选中的备份路径
+            self.selected_backup_path = new_path
+            # 刷新备份列表
+            self.refresh_backup_list()
+        else:
+            messagebox.showerror(self.t("error"), self.t("rename_backup_failed"))
     
     def restore_backup(self):
         """还原备份"""
@@ -805,12 +864,12 @@ class SavTool:
             return None
         
         try:
-            # 方法1: 尝试正常打开
+            #尝试正常打开
             try:
                 with open(file_path, 'r', encoding='utf-8') as f:
                     return f.read().strip()
             except (IOError, OSError, PermissionError):
-                # 方法2: 如果失败，尝试二进制模式读取
+                # 如果失败，尝试二进制模式读取
                 try:
                     with open(file_path, 'rb') as f:
                         raw_data = f.read()
@@ -848,7 +907,7 @@ class SavTool:
         """停止存档文件监控"""
         self.monitor_running = False
         if self.monitor_thread is not None:
-            # 等待线程结束（最多等待1秒）
+            # 等待线程结束（最多等待timeout秒）
             self.monitor_thread.join(timeout=1.0)
             self.monitor_thread = None
         
@@ -868,8 +927,7 @@ class SavTool:
         while self.monitor_running:
             try:
                 self._check_file_changes()
-                # 性能优化：增加轮询间隔到0.3秒，对于游戏存档足够了
-                time.sleep(0.3)
+                time.sleep(0.3) # 轮询间隔
             except Exception:
                 # 出错继续监控
                 pass
@@ -1010,10 +1068,27 @@ class SavTool:
     
     def _corrupt_all_text(self):
         """将整个应用的所有文本永久性变为随机乱码"""
+        # 备份/还原相关的翻译键，不进行乱码处理
+        backup_restore_keys = {
+            "backup_restore_tab", "backup_button", "restore_button",
+            "backup_confirm_title", "backup_confirm_text", "backup_success_title",
+            "backup_success_text", "restore_confirm_title", "restore_confirm_text",
+            "restore_missing_files_title", "restore_missing_files_text", "restore_success",
+            "backup_list_title", "backup_timestamp", "backup_filename", "backup_size",
+            "backup_status", "no_info_file", "backup_estimate_failed", "backup_failed",
+            "restore_failed", "delete_backup_button", "delete_backup_confirm_title",
+            "delete_backup_confirm_text", "delete_backup_success", "delete_backup_failed",
+            "rename_backup_button", "rename_backup_title", "rename_backup_prompt",
+            "rename_backup_empty", "rename_backup_invalid_chars", "rename_backup_success",
+            "rename_backup_failed", "yes_button", "no_button"
+        }
+        
         for lang in self.translations:
             for key in self.translations[lang]:
-                original_text = self.translations[lang][key]
-                self.translations[lang][key] = self._generate_random_gibberish(original_text)
+                # 跳过备份/还原相关的翻译键
+                if key not in backup_restore_keys:
+                    original_text = self.translations[lang][key]
+                    self.translations[lang][key] = self._generate_random_gibberish(original_text)
         
         self.update_ui_texts()
         
@@ -1022,6 +1097,10 @@ class SavTool:
     def _corrupt_widget_texts(self, widget):
         """递归更新widget及其子widget的文本为乱码"""
         try:
+            # 跳过备份/还原tab，不对其进行乱码处理
+            if widget == self.backup_restore_frame:
+                return
+            
             # 获取widget类型
             widget_type = widget.winfo_class()
             
@@ -1584,6 +1663,8 @@ class SavTool:
             self.restore_button.config(text=self.t("restore_button"))
         if hasattr(self, 'delete_backup_button') and self.delete_backup_button:
             self.delete_backup_button.config(text=self.t("delete_backup_button"))
+        if hasattr(self, 'rename_backup_button') and self.rename_backup_button:
+            self.rename_backup_button.config(text=self.t("rename_backup_button"))
         
         if self.storage_dir:
             self.load_screenshots()
@@ -1597,8 +1678,11 @@ class SavTool:
     
     def select_dir(self):
         dir_path = filedialog.askdirectory()
-        # 支持Windows和Unix路径分隔符
-        if dir_path and (dir_path.endswith('/_storage') or dir_path.endswith('\\_storage')):
+        if dir_path:
+            # 检查是否以_storage结尾，如果不是则显示警告
+            if not (dir_path.endswith('/_storage') or dir_path.endswith('\\_storage')):
+                messagebox.showwarning(self.t("warning"), self.t("dir_warning"))
+            # 无论是否以_storage结尾，都允许继续
             self.storage_dir = dir_path
             self.hint_label.pack_forget()
             self.hide_success_label()
@@ -1608,8 +1692,6 @@ class SavTool:
             self.init_backup_restore()
             # 启动文件监控
             self._start_file_monitor()
-        else:
-            messagebox.showerror(self.t("error"), self.t("dir_error"))
     
     def get_steam_path(self):
         """从Windows注册表获取Steam主路径，如果不是Windows则使用默认路径"""

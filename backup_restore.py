@@ -341,4 +341,39 @@ class BackupRestore:
             
         except Exception:
             return False
+    
+    def rename_backup(self, zip_path, new_filename):
+        """
+        重命名备份文件
+        
+        Args:
+            zip_path: 备份zip文件路径
+            new_filename: 新的文件名（不包含路径，只包含文件名和扩展名）
+        
+        Returns:
+            (新文件路径, 旧文件名) 如果成功，None 如果失败
+        """
+        if not os.path.exists(zip_path):
+            return None
+        
+        # 确保新文件名以.zip结尾
+        if not new_filename.endswith('.zip'):
+            new_filename = new_filename + '.zip'
+        
+        try:
+            backup_dir = os.path.dirname(zip_path)
+            old_filename = os.path.basename(zip_path)
+            new_path = os.path.join(backup_dir, new_filename)
+            
+            # 检查新文件名是否已存在
+            if os.path.exists(new_path) and new_path != zip_path:
+                return None
+            
+            # 重命名文件
+            os.rename(zip_path, new_path)
+            
+            return (new_path, old_filename)
+            
+        except Exception:
+            return None
 

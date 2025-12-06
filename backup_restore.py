@@ -6,7 +6,7 @@ import tempfile
 import random
 
 # 版本常量
-VERSION = "0.3.0"
+VERSION = "v0.3.0"
 
 class BackupRestore:
     def __init__(self, storage_dir):

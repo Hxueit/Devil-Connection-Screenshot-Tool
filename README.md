@@ -1,49 +1,56 @@
 # Devil Connection .sav Manager
 
+![Tkinter](https://img.shields.io/badge/GUI-Tkinter-blue?logo=python&logoColor=white) [![GitHub release (latest by date)](https://img.shields.io/github/v/release/Hxueit/Devil-Connection-Sav-Manager)](https://github.com/Hxueit/Devil-Connection-Sav-Manager/releases) ![Contains Spoilers](https://img.shields.io/badge/⚠-Contains_Spoilers-yellow) <img src="https://cdn.fastly.steamstatic.com/steamcommunity/public/images/apps/3054820/0cf0cb63d65311ed0b0f6f3cb5a2af88593b7361.jpg" alt="DC" width="20" height="20" style="border-radius: 20%;" />
+
 <details>
 <summary>日本語 (Japanese)</summary>
 
-> 本READMEはLLMによって翻訳されています。不正確な部分がある場合はご容赦ください。
+> 日本語が母国語ではなく、非常に苦手なため、説明文はLLMのサポートを受けて書いています。多少のミスは大目に見ていただけると嬉しいです。（ゲーム内のデータは検証済みで、原文と一致しているはずです。）
 
-『でびるコネクショん』の一部 .sav ファイル（スクリーンショットだけでなくその他も含む）を管理・編集できる、シンプルで使いやすい小さなツールです。
+『でびるコネクショん』の .sav ファイル（スクリーンショットやセーブデータ）を管理・編集できる、シンプルで使いやすいツールです。
 
-ゲームは最高です。[Steamストアページ](https://store.steampowered.com/app/3054820/)はこちら。ぜひ作者さんを応援してください。
+このゲームは本当に素晴らしい作品です。[Steamストアページ](https://store.steampowered.com/app/3054820/)はこちら。ぜひ作者さんを応援してください。
 
-tkinterでGUIを構築しています。
-
-## 機能特徴
+## 機能一覧
 
 ツールは3つのタブで構成されています。
 
+### 📊 セーブデータ解析
+
+- `DevilConnection_sf.sav` を自動デコードして詳細情報を一覧表示
+  - 達成済みエンディング、ステッカー、キャラ統計（未収集リスト）
+  - 私の個人的なまとめによる**全エンディング／ステッカーの入手条件**も含まれているので、条件チェックもしやすいかと思います。
+  - ゲーム進行統計（MP収集数、判定回数、ループ回数など）
+  - 狂信徒ルート関連情報（NEO値、進行状況など）
+  - その他多数
+- **エンディング達成条件一覧**：各エンディングの解除条件を一覧表示（未達成はハイライト）
+- **セーブデータビューア**：`DevilConnection_sf.sav`の内容を閲覧・編集可能
+
 ### 📸 スクリーンショット管理
+
 - 🖼️ **画像プレビュー**：.savファイルに埋め込まれたbase64画像を自動デコードしてプレビュー表示
 - ➕ **追加・置換・削除**：任意の画像をギャラリーに追加したり、既存のスクショを置き換え・削除
 - 📤 **エクスポート**：スクショをpng/jpeg/webp形式で個別または一括保存
 - 🔀 **並び替え**：ギャラリー内の表示順を自由に変更可能
-- ☑️ **複数選択対応：チェックボックスで複数選択して一括操作
-
-### 📊 セーブデータ解析
-- `DevilConnection_sf.sav` を自動デコードして詳細情報を一覧表示
-  - 達成済みエンディング、ステッカー、キャラ統計（未収集リスト）
-  - ゲーム進行統計（MP収集数、判定回数、ループ回数など）
-  - 狂信徒ルート関連情報（NEO値、進行状況など）
-  - その他いろいろ
-- **エンディング達成条件一覧**：各エンディングの解除条件を一覧表示（未達成はハイライト）
-- **セーブデータビューア**：`DevilConnection_sf.sav`の内容を便利に見たり編集したり可能
+- ☑️ **複数選択対応**：チェックボックスで複数選択して一括操作が可能
 
 ### 💾 バックアップ・復元
+
 - `_storage`フォルダ全体をZIP形式でバックアップし、ローカルに保存。必要に応じて復元可能
 
 ## インストール
 
 ### 必要環境
+
 - Python 3.8 以上
 
 ### インストール手順
-※ Releasesページから単体exeをダウンロードすれば、Pythonも依存パッケージも一切不要です
+
+※ Releasesページから単体exeをダウンロードすれば、Pythonも依存パッケージも不要です
 
 1. リポジトリをクローンまたはダウンロード
 2. 依存パッケージをインストール
+
 ```bash
 pip install -r requirements.txt
 ```
@@ -51,62 +58,75 @@ pip install -r requirements.txt
 ## 使い方
 
 1. プログラム起動
-```bash
-python main.py
-```
+
+    ```bash
+    python main.py
+    ```
 
 2. ゲームフォルダを選択
-   - 「ディレクトリを選択」ボタンをクリック
-   - ゲームの `_storage` フォルダを選択  
-     （例：`C:\Program Files (x86)\Steam\steamapps\common\でびるコネクショん\_storage`）
+
+    - 「ディレクトリを選択」ボタンをクリック
+    - ゲームの `_storage` フォルダを選択、または自動検出
+        （例：`C:\Program Files (x86)\Steam\steamapps\common\でびるコネクショん\_storage`）
 
 3. 自動で `_storage` 内の `DevilConnection_photo_XXXXXXXX.sav` 形式の全ファイルと `DevilConnection_sf.sav` を読み込み、各機能が使用可能になります。
 
 ## 補足説明
 
-### スクリーンショット管理タブ
-
-#### ドラッグ＆ドロップで並び替え
-- リスト項目をクリックしてドラッグで順序変更可能（ゲーム内ギャラリーの表示順にそのまま反映されます）
-- ドラッグ中は矢印インジケーターでどのファイルが移動中か分かるようになっています
-
-#### 一括エクスポート
-- 複数選択した画像はすべてZIPファイルにまとめてエクスポートされます
-
 ### セーブデータ解析タブ
 
 #### セーブデータ編集
-- 「セーブデータを表示」ボタンで `DevilConnection_sf.sav` をJSON形式でJSON表示
-- 「編集モードを有効化」にチェックを入れると編集可能に
+
+- 「セーブデータを表示」ボタンで `DevilConnection_sf.sav` の内容をJSON形式で表示
+- 「編集モードを有効化」にチェックを入れると編集可能になります
 - 編集後は「保存」ボタンで上書き保存可能  
-  **※間違った編集をするとセーブデータが壊れます。本当に分かっている場合のみ操作し、必ずバックアップを取ってください**
+    **※間違った編集をするとセーブデータが破損します。構造を理解している場合のみ操作し、必ずバックアップを取ってください**
 - `record`・`_tap_effect`・`initialVars` などの折りたたまれた項目を編集したい場合は「すべて展開/横に展開」のチェックを入れてください
 
 #### 変数名表示
-- 「変数名を表示」にチェックを入れると、各項目の横に実際の変数名（例：`memory.name`、`endings` など）が表示され、セーブデータ内の位置が把握しやすくなります
+
+- 「変数名を表示」にチェックを入れると、各項目の横に実際の変数パス（例：`memory.name`、`endings` など）が表示され、セーブデータ内の位置が把握しやすくなります
 
 #### 変更通知（Toast）
+
 - `DevilConnection_sf.sav`セーブファイルが外部で変更された場合、自動的に通知が表示されます
 - 変更内容（変数名と値の変化）がリアルタイムで表示されます
+- `record`/`initialVars`内の変更はデフォルトで通知対象外です（「その他」タブで検知を有効にできますが、動作が重くなる可能性があるため推奨しません）。
 
-### Q: なぜ`DevilConnection_tyrano_data.sav`セーブファイルの読み取り/編集機能がないのか
-- A: このセーブファイルは一般的に大きすぎて、現在のtkinterアーキテクチャでは処理できません。編集が必要な場合は、URLデコードを手動で行ってください。
+### スクリーンショット管理タブ
 
-### Q：このツールって何の役に立つの？
-A：実用性はそこまで高くないです。一番便利なのはステッカーとNEO値の数をすぐ確認できることと、スクショの出し入れが楽になることくらいです。ゲーム内スクショをちょっと加工したいときも、一度ツールで画像を入れてゲーム内で加工してまた取り出す、みたいな遊び方ができます。
+#### ドラッグ＆ドロップで並び替え
+
+- リスト項目をクリックしてドラッグで順序変更可能（ゲーム内ギャラリーの表示順にそのまま反映されます）
+- ドラッグ中は矢印インジケーターで移動先が表示されます
+
+#### 一括エクスポート
+
+- 複数選択した画像はすべてZIPファイルにまとめてエクスポートされます
+
+### Q: なぜ`DevilConnection_tyrano_data.sav`の読み取り/編集機能がないのですか？
+
+- A: 今後のアップデートで対応する予定です。現在は `tyrano.sav` のデコード・エンコードを行うボタンを追加しましたので、そちらをご利用ください。
+
+### Q：このツールは何の役に立つの？
+
+A：実用性はそこまで高くありません。主にステッカー収集状況やNEO値をすぐに確認できたり、スクリーンショット管理が楽になる点などが便利です。
 
 ## 注意事項
-- ツールはゲームのスクリーンショット保存ファイルとセーブデータを**直接書き換え**します。不安な方は必ず`_storage`フォルダ全体のバックアップを取ってください
-- 並び替え操作はゲーム内ギャラリーの表示順にそのまま影響します
+
+- 本ツールはゲームのスクリーンショット保存ファイルとセーブデータを**直接書き換えます**。不安な方は必ず`_storage`フォルダ全体のバックアップを取ってください
+- 並び替え操作はゲーム内ギャラリーの表示順にそのまま反映されます
 - ⚠️ 削除操作はファイル本体とインデックス情報の両方を削除するため、取り消しはできません
-- ⚠️ **セーブデータ編集機能は特に危険です**。JSON形式の破損や必須項目の削除などでセーブが読み込めなくなる可能性があります。編集前に必ずバックアップを
-- 本ツールは《でびるコネクショん》公式・開発者とは一切関係ありません。完全に有志による非公式ツールです。ゲーム本体のファイルは一切触りません（_storage 内の保存データのみ操作）
+- ⚠️ **セーブデータ編集機能は特に注意が必要です**。JSON形式の破損や必須項目の削除などでセーブデータが読み込めなくなる可能性があります。編集前に必ずバックアップを取ってください
+- 本ツールは《でびるコネクショん》公式・開発者とは一切関係ありません。完全に有志による非公式ツールです。ゲーム本体のファイルは一切変更せず、`_storage` 内の保存データのみを操作します。 もし開発者様にとって何か不都合がございましたら、GitHub Issuesにてご連絡いただければ、直ちに対応いたします。
 
 ## ライセンス
+
 MIT License
 
 ## 貢献
-暇なときに書いたものなので、個人テストでは問題ありませんでしたが、抜け漏れがあるかもしれません。  
+
+個人の趣味で作成したツールのため、自分の環境では問題ありませんでしたが、予期せぬ不具合があるかもしれません。  
 IssueやPull Requestは大歓迎です。
 
 </details>
@@ -118,11 +138,19 @@ IssueやPull Requestは大歓迎です。
 
 游戏很棒，这里是 [Steam商店页面](https://store.steampowered.com/app/3054820/)，欢迎支持游戏作者。
 
-使用tkinter构建GUI。
-
 ## 功能特性
 
 本工具由三个标签页组成：
+
+### 📊 存档分析
+
+- **自动解码`DevilConnection_sf.sav`并提取列出一些详细信息**
+  - 结局，贴纸，角色统计（未收集列表,包含我个人总结的**全结局/贴纸获取条件**，方便核对/完成）
+  - 游戏统计（MP收集量、判定次数、循环次数等）
+  - 狂信徒线相关信息（NEO值、狂信徒线进行状况等）
+  - 等等一些
+- **达成条件显示**：一览显示各结局/贴纸的达成条件（未达成结局会高亮显示）
+- **存档文件查看器**：便利的查看/修改`DevilConnection_sf.sav`中的信息
 
 ### 📸 截图管理
 
@@ -132,18 +160,9 @@ IssueやPull Requestは大歓迎です。
 - 🔀 **排序功能**：自由调整截图在画廊中显示的顺序
 - ☑️ **多选功能**：支持复选框多选，方便批量操作
 
-### 📊 存档分析
-
-- **自动解码`DevilConnection_sf.sav`并提取列出一些详细信息**
-  - 结局，贴纸，角色统计（未收集列表）
-  - 游戏统计（MP收集量、判定次数、循环次数等）
-  - 狂信徒线相关信息（NEO值、狂信徒线进行状况等）
-  - 等等一些
-- **达成条件显示**：一览显示各结局的达成条件（未达成结局会高亮显示）
-- **存档文件查看器**：便利的查看/修改`DevilConnection_sf.sav`中的信息
-
 ### 💾 备份/还原
-- *将`_storage`文件夹整体备份为ZIP格式并存入本地，需要时可还原
+
+- 将`_storage`文件夹整体备份为ZIP格式并存入本地，需要时可还原
 
 ## 安装
 
@@ -167,17 +186,36 @@ pip install -r requirements.txt
 
 1. 运行程序：
 
-```bash
-python main.py
-```
+    ```bash
+    python main.py
+    ```
 
 2. 选择游戏目录：
    - 点击"浏览目录"按钮
-   - 选择游戏的 `_storage` 目录（例如：`C:\Program Files (x86)\Steam\steamapps\common\でびるコネクショん\_storage`）
+   - 手动选择或者自动检测游戏的 `_storage` 目录（例如：`C:\Program Files (x86)\Steam\steamapps\common\でびるコネクショん\_storage`）
 
 3. 程序会自动获取所有该目录下形如`DevilConnection_photo_XXXXXXXX.sav`的文件以及`DevilConnection_sf.sav`文件，使用功能。
 
 ## 额外说明
+
+### 存档分析标签页
+
+#### 存档文件编辑
+
+- 通过"查看存档文件"按钮，可以以JSON格式查看`DevilConnection_sf.sav`存档文件内容。
+- 勾选"开启修改"复选框后，可以进行编辑。
+- 编辑后的内容可以通过"保存"按钮保存，但**错误的编辑可能导致游戏损坏，请务必在知道你在干什么的情况下再做操作**。同时**做好备份**
+- 要编辑折叠的字段（如`record`、`_tap_effect`、`initialVars`等），需要先勾选"取消折叠/横置"复选框。
+
+#### 变量名显示
+
+- 勾选"显示变量名"复选框后，各信息前会显示变量名（如`memory.name`、`endings`等），方便确认变量在存档文件中的位置。
+
+#### 变更通知（Toast）
+
+- 当`DevilConnection_sf.sav`存档文件在外部被修改时，会自动显示通知
+- 实时显示变更内容（变量名和值的变化）
+- `record`以及`initialVars` 变量的变动默认被忽略（你可以在“其他”选项卡中开启检测，但不推荐监听`record`，可能会导致卡顿）。
 
 ### 截图管理标签页
 
@@ -190,30 +228,13 @@ python main.py
 
 - 批量导出会将所有选中的图片打包成一个 ZIP 文件。
 
-### 存档分析标签页
+### Q: 为什么没有直接读取/修改`DevilConnection_tyrano_data.sav`存档文件的功能
 
-#### 存档文件编辑
-
-- 通过"查看存档文件"按钮，可以以JSON格式查看`DevilConnection_sf.sav`存档文件内容。
-- 勾选"开启修改"复选框后，可以进行编辑。
-- 编辑后的内容可以通过"保存"按钮保存，但**错误的编辑可能导致游戏损坏，请务在知道你在干什么的情况下再做操作**。同时**做好备份**
-- 要编辑折叠的字段（如`record`、`_tap_effect`、`initialVars`等），需要先勾选"取消折叠/横置"复选框。
-
-#### 变量名显示
-
-- 勾选"显示变量名"复选框后，各信息前会显示变量名（如`memory.name`、`endings`等），方便确认变量在存档文件中的位置。
-
-#### 变更通知（Toast）
-
-- 当`DevilConnection_sf.sav`存档文件在外部被修改时，会自动显示通知
-- 实时显示变更内容（变量名和值的变化）
-
-### Q: 为什么没有读取/修改`DevilConnection_tyrano_data.sav`存档文件的功能
-- A: 该存档文件一般过于大了，目前的tkinter架构处理不来，如果有需要修改可以自行url解码。
+- A: 计划接下来的更新会加入此功能。目前版本已加入了`tyrano.sav`的解码导出/编码导入按钮，可以先使用该功能。
 
 ### Q：这个项目有什么用？
 
-- A：没什么很大的实际用途。最重要的大概是速查贴纸和NEO值的数量，同时方便导入导出游戏内截图。如果你想快速往图片中添加一个游戏内的截图也可以将图片导入进去，在游戏中修改，再提取出来。可以玩玩。
+- A：没什么很大的实际用途。最重要的大概是速查贴纸和NEO值的数量，同时方便导入导出游戏内截图。可以玩玩。
 
 ## 注意事项
 
@@ -231,7 +252,6 @@ MIT License
 
 - 本项目是利用闲暇时间写出的，经个人测试未发现使用问题，但难免会有疏漏。非常欢迎提交issue或者pull request。
 
-
 </details>
 
 <details>
@@ -241,41 +261,45 @@ A small, easy-to-use tool for managing and editing some .sav files for the game 
 
 Honestly fantastic game – here is the [Steam store page](https://store.steampowered.com/app/3054820/). Please consider supporting the developers.
 
-GUI is built with tkinter.
-
 ## Features
 
 The tool consists of three tabs:
 
+### 📊 Save Data Analysis
+
+- Automatically decodes `DevilConnection_sf.sav` and displays detailed information:
+  - Achieved endings, stickers, character statistics (including uncollected items list and a personal summary of the **unlock requirements for all endings and stickers**, which should come in handy for checking.)
+  - Game statistics (MP collected, judgment count, loop count, etc.)
+  - Fanatic route info (NEO value, fanatic route progress, etc.)
+  - And some more details
+- **Ending/Stickers unlock conditions list**: Shows requirements for every ending at a glance and automatically highlights unachieved ones
+- **Save file viewer/editor**: Conveniently view and modify the contents of `DevilConnection_sf.sav`
+
 ### 📸 Screenshot Management
+
 - 🖼️ **Preview**: Automatically decodes base64 images inside .sav files and displays them
 - ➕ **Add / Replace / Delete**: Freely add custom images to the gallery, replace existing screenshots, or delete them
 - 📤 **Export**: Save screenshots as png / jpeg / webp files (individual or batch)
 - 🔀 **Reorder**: Freely change the display order in the in-game gallery
 - ☑️ **Multi-selection**: Checkbox support for easy batch operations
 
-### 📊 Save Data Analysis
-- Automatically decodes `DevilConnection_sf.sav` and displays detailed information:
-  - Achieved endings, stickers, character statistics (including uncollected items list)
-  - Game statistics (MP collected, judgment count, loop count, etc.)
-  - Fanatic route info (NEO value, fanatic route progress, etc.)
-  - And some more details
-- **Ending unlock conditions list**: Shows requirements for every ending at a glance (unachieved endings are highlighted)
-- **Save file viewer/editor**: Conveniently view and modify the contents of `DevilConnection_sf.sav`
-
 ### 💾 Backup & Restore
+
 - Backup the entire `_storage` folder as a ZIP file and save locally. Restore at any time when needed
 
 ## Installation
 
 ### Requirements
+
 - Python 3.8 or higher
 
 ### Installation steps
+>
 > Note: You can also download the standalone .exe from the Releases page — no Python or dependencies required
 
 1. Clone or download this repository
 2. Install dependencies:
+
 ```bash
 pip install -r requirements.txt
 ```
@@ -283,31 +307,24 @@ pip install -r requirements.txt
 ## How to Use
 
 1. Launch the program:
-```bash
-python main.py
-```
+
+    ```bash
+    python main.py
+    ```
 
 2. Select the game folder:
-   - Click the “Browse Directory” button
-   - Choose the game's `_storage` folder  
-     (example: `C:\Program Files (x86)\Steam\steamapps\common\でびるコネクショん\_storage`)
+    - Click the “Browse Directory” button
+    - Choose or autodetect the game's `_storage` folder  
+      (example: `C:\Program Files (x86)\Steam\steamapps\common\でびるコネクショん\_storage`)
 
-3. The tool will automatically load all files matching `DevilConnection_photo_XXXXXXXX.sav` and the `DevilConnection_sf.sav` file. 
+3. The tool will automatically load all files matching `DevilConnection_photo_XXXXXXXX.sav` and the `DevilConnection_sf.sav` file.
 
 ## Additional Notes
-
-### Screenshot Management Tab
-
-#### Drag & Drop Reordering
-- Click and drag list items to change order (the in-game gallery will reflect the new order)
-- An arrow indicator shows which file is being moved during drag
-
-#### Batch Export
-- All selected images will be packed into a single ZIP file
 
 ### Save Data Analysis Tab
 
 #### Save File Editing
+
 - Click “View Save Data” to display `DevilConnection_sf.sav` content in JSON format
 - Check “Enable Editing” to allow modifications
 - Changes can be saved with the “Save” button  
@@ -315,29 +332,48 @@ python main.py
 - To edit collapsed fields (`record`, `_tap_effect`, `initialVars`, etc.), first check “Unfold All / Expand Horizontally”
 
 #### Variable Name Display
+
 - When "Show Variable Names" is checked, the actual variable path (e.g., `memory.name`, `endings`, etc.) is shown next to each item, making it easy to locate values in the save file
 
 #### Change Notifications (Toast)
+
 - When the `DevilConnection_sf.sav` save file is modified externally, notifications are automatically displayed
 - Shows real-time change details (variable names and value changes)
+- Changes to the `record` and `initialVars` variable are excluded by default. (You can enable those in the 'Others' tab, however it may cause performance issues.)
 
-### Q: Why is there no feature to read/edit the `DevilConnection_tyrano_data.sav` save file?
-- A: This save file is generally too large for the current tkinter architecture to handle. If you need to edit it, you can manually URL decode it.
+### Screenshot Management Tab
+
+#### Drag & Drop Reordering
+
+- Click and drag list items to change order (the in-game gallery will reflect the new order)
+- An arrow indicator shows which file is being moved during drag
+
+#### Batch Export
+
+- All selected images will be packed into a single ZIP file
+
+### Q: Why is there no feature to directly read/edit the `DevilConnection_tyrano_data.sav` save file?
+
+- A: I plan to add this feature in a future update. For now, I have added a button to decode export/encode import the `tyrano.sav`, so you can use that to handle the file manually.
 
 ### Q: What is this tool actually useful for?
-A: It doesn't have huge practical value. The most useful parts are probably quickly checking sticker counts and NEO value, and easily importing/exporting gallery screenshots. You can also import an image, edit it in-game, then extract it again—just for fun.
+
+A: It doesn't have huge practical value. The most useful parts are probably quickly checking sticker counts and NEO value, and easily importing/exporting gallery screenshots.
 
 ## Important Notes
+
 - The tool directly modifies the game's screenshot save files and the main save file. If you're worried, please **back up** the entire `_storage` folder first
 - Reordering changes the actual display order in the in-game gallery
 - ⚠️ Deletion permanently removes both the file and its index entry — it cannot be undone
 - ⚠️ Be careful when editing the save file. Invalid JSON, deleted required fields, etc., can make the save unreadable and break the game. Only edit when you know what you are doing, and always make a backup before editing.
-- This tool is completely unofficial and has no affiliation with the developers of 《でびるコネクショん》. It only fetches/edits locally stored save and screenshot files; does not modifies core game files.
+- This tool is completely unofficial and has no affiliation with the developers of 《でびるコネクショん》. It only fetches/edits locally stored save and screenshot files; does not modify core game files. If the developers have any issues with it, please let me know via GitHub Issues, and I will handle it immediately.
 
 ## License
+
 MIT License
 
 ## Contributions
+
 This was written in spare time and works fine in my own testing, but there may be edge cases. Issues and pull requests are very welcome!
 
 </details>

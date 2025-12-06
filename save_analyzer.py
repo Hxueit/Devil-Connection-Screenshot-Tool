@@ -15,6 +15,15 @@ import string
 
 
 class SaveAnalyzer:
+    # 固定的 omakes 总数列表
+    TOTAL_OMAKES = ["1", "3", "5", "10", "15", "17", "21", "22", "9", "4", "19", "20", "23", "2", "8", "7", "6", "11", "12", "13", "14", "16", "18", "24", "26", "33", "25", "31", "38", "39", "41", "40", "42", "43", "44", "32"]
+    
+    # 固定的 gallery 总数列表
+    TOTAL_GALLERY = ["kupya_kaisou", "JU", "fuga_kaisou", "Lamia", "BBB_1", "BBB_2", "DE", "me", "kaisou", "end", "BBB_3", "NA", "yume", "ma", "D", "pa", "geki", "debi", "NISU", "amo", "mane", "DR", "BBB"]
+    
+    # 固定的 ngScene 总数列表
+    TOTAL_NG_SCENE = ["geki", "yume_kupya", "yume_debi", "neodebi", "koumori", "BBB", "amo", "naza", "mane", "DR", "hade", "debi", "gauru"]
+    
     def __init__(self, parent, storage_dir, translations, current_language):
         self.parent = parent
         self.storage_dir = storage_dir
@@ -1946,7 +1955,7 @@ class SaveAnalyzer:
         
         return content_frame
     
-    def create_section_with_button(self, parent, title, button_text, button_command=None, title_key=None):
+    def create_section_with_button(self, parent, title, button_text, button_command=None, title_key=None, button_text_key=None):
         """创建带标题和按钮的分区
         
         Args:
@@ -1955,6 +1964,7 @@ class SaveAnalyzer:
             button_text: 按钮文本（已翻译）
             button_command: 按钮命令
             title_key: 标题的翻译键（可选，用于语言切换时更新）
+            button_text_key: 按钮文本的翻译键（可选，用于语言切换时更新）
         """
         section_frame = tk.Frame(parent, bg=Colors.WHITE, relief="ridge", borderwidth=2)
         section_frame.pack(fill="x", padx=10, pady=5)
@@ -1985,7 +1995,7 @@ class SaveAnalyzer:
         self._section_title_widgets[key] = {
             'title_label': title_label,
             'button': button,
-            'button_text_key': 'view_requirements' if button_text else None,
+            'button_text_key': button_text_key if button_text_key else ('view_requirements' if button_text else None),
             'title_key': title_key
         }
         
@@ -2449,25 +2459,29 @@ class SaveAnalyzer:
             }
         
         # 5. 额外内容统计
-        omakes_section = self.create_section(
+        omakes_section = self.create_section_with_button(
             parent, 
             self.t("omakes_statistics"),
-            title_key="omakes_statistics"
+            self.t("ng_scene_quick_check"),
+            button_command=lambda: self.show_ng_scene_requirements(save_data),
+            title_key="omakes_statistics",
+            button_text_key="ng_scene_quick_check"
         )
         self._section_map["omakes_statistics"] = omakes_section
         
-        omakes = set(save_data.get("omakes", []))
-        omakes_count = len(omakes)
-        collected_omakes = omakes & collected_endings  # 已收集的额外内容
+        # omakes 是已收集的额外内容列表
+        collected_omakes = set(save_data.get("omakes", []))
         collected_omakes_count = len(collected_omakes)
-        missing_omakes = sorted(omakes - collected_endings, key=lambda x: int(x) if x.isdigit() else 999)
+        total_omakes_set = set(self.TOTAL_OMAKES)
+        total_omakes_count = len(total_omakes_set)
+        missing_omakes = sorted(total_omakes_set - collected_omakes, key=lambda x: int(x) if x.isdigit() else 999)
         
-        # omakes是已观看的额外内容数量
-        self.add_info_line(omakes_section, self.t("total_omakes"), omakes_count, "omakes", "omakes.count")
-        self.add_info_line(omakes_section, self.t("collected_omakes"), collected_omakes_count, None, "collected_omakes.count")
+        # 显示总数和已收集数量
+        self.add_info_line(omakes_section, self.t("total_omakes"), total_omakes_count, None, "omakes.count")
+        self.add_info_line(omakes_section, self.t("collected_omakes"), collected_omakes_count, "omakes", "collected_omakes.count")
         missing_omakes_key = "missing_omakes"
         if missing_omakes:
-            missing_omakes_text = f"{len(missing_omakes)}: {', '.join(missing_omakes)}"
+            missing_omakes_text = ', '.join(missing_omakes)
         else:
             missing_omakes_text = self.t("none")
         self.add_info_line(omakes_section, self.t("missing_omakes"), missing_omakes_text, None, missing_omakes_key)
@@ -2480,11 +2494,19 @@ class SaveAnalyzer:
         # 画廊数量和NG场景数移到额外内容统计
         gallery = save_data.get("gallery", [])
         gallery_count = len(gallery)
-        self.add_info_line(omakes_section, self.t("gallery_count"), gallery_count, "gallery", "gallery.count")
+        total_gallery_count = len(self.TOTAL_GALLERY)
+        gallery_display = f"{gallery_count}/{total_gallery_count}"
+        self.add_info_line(omakes_section, self.t("gallery_count"), gallery_display, "gallery", "gallery.count")
         
         ng_scene = save_data.get("ngScene", [])
         ng_scene_count = len(ng_scene)
-        self.add_info_line(omakes_section, self.t("ng_scene_count"), ng_scene_count, "ngScene", "ngScene.count")
+        total_ng_scene_count = len(self.TOTAL_NG_SCENE)
+        ng_scene_display = f"{ng_scene_count}/{total_ng_scene_count}"
+        try:
+            ng_scene_tooltip = self.t("ng_scene_count_tooltip")
+            self.add_info_line_with_tooltip(omakes_section, self.t("ng_scene_count"), ng_scene_display, ng_scene_tooltip, "ngScene", "ngScene.count")
+        except:
+            self.add_info_line(omakes_section, self.t("ng_scene_count"), ng_scene_display, "ngScene", "ngScene.count")
         
         # 6. 游戏统计
         stats_section = self.create_section(parent, self.t("game_statistics"), title_key="game_statistics")
@@ -2866,28 +2888,37 @@ class SaveAnalyzer:
                     widget_info['is_list'] = False
         
         # 更新额外内容统计
-        omakes = set(save_data.get("omakes", []))
-        omakes_count = len(omakes)
-        collected_omakes = omakes & collected_endings
+        # omakes 是已收集的额外内容列表
+        collected_omakes = set(save_data.get("omakes", []))
         collected_omakes_count = len(collected_omakes)
-        missing_omakes = sorted(omakes - collected_endings, key=lambda x: int(x) if x.isdigit() else 999)
+        total_omakes_set = set(self.TOTAL_OMAKES)
+        total_omakes_count = len(total_omakes_set)
+        missing_omakes = sorted(total_omakes_set - collected_omakes, key=lambda x: int(x) if x.isdigit() else 999)
         
-        self.add_info_line(None, self.t("total_omakes"), omakes_count, "omakes", "omakes.count")
-        self.add_info_line(None, self.t("collected_omakes"), collected_omakes_count, None, "collected_omakes.count")
+        self.add_info_line(None, self.t("total_omakes"), total_omakes_count, None, "omakes.count")
+        self.add_info_line(None, self.t("collected_omakes"), collected_omakes_count, "omakes", "collected_omakes.count")
         
         if missing_omakes:
-            missing_omakes_text = f"{len(missing_omakes)}: {', '.join(missing_omakes)}"
+            missing_omakes_text = ', '.join(missing_omakes)
         else:
             missing_omakes_text = self.t("none")
         self.add_info_line(None, self.t("missing_omakes"), missing_omakes_text, None, "missing_omakes")
         
         gallery = save_data.get("gallery", [])
         gallery_count = len(gallery)
-        self.add_info_line(None, self.t("gallery_count"), gallery_count, "gallery", "gallery.count")
+        total_gallery_count = len(self.TOTAL_GALLERY)
+        gallery_display = f"{gallery_count}/{total_gallery_count}"
+        self.add_info_line(None, self.t("gallery_count"), gallery_display, "gallery", "gallery.count")
         
         ng_scene = save_data.get("ngScene", [])
         ng_scene_count = len(ng_scene)
-        self.add_info_line(None, self.t("ng_scene_count"), ng_scene_count, "ngScene", "ngScene.count")
+        total_ng_scene_count = len(self.TOTAL_NG_SCENE)
+        ng_scene_display = f"{ng_scene_count}/{total_ng_scene_count}"
+        try:
+            ng_scene_tooltip = self.t("ng_scene_count_tooltip")
+            self.add_info_line_with_tooltip(None, self.t("ng_scene_count"), ng_scene_display, ng_scene_tooltip, "ngScene", "ngScene.count")
+        except:
+            self.add_info_line(None, self.t("ng_scene_count"), ng_scene_display, "ngScene", "ngScene.count")
         
         # 更新游戏统计
         whole_total_mp = save_data.get("wholeTotalMP", 0)
@@ -3632,7 +3663,7 @@ class SaveAnalyzer:
             except Exception as e:
                 from tkinter import messagebox
                 messagebox.showerror(
-                    self.t("save_failed"),
+                    self.t("save_failed", error=str(e)),
                     str(e),
                     parent=viewer_window
                 )
@@ -3802,7 +3833,7 @@ class SaveAnalyzer:
         return lines if lines else [text]
     
     def _show_requirements_canvas(self, title_key, hint_key, items, collected_set, 
-                                   id_prefix, window_title_suffix, is_sticker=False):
+                                   id_prefix, window_title_suffix, is_sticker=False, is_ng_scene=False):
         """通用的Canvas卡片式达成条件显示窗口"""
         # 获取根窗口
         root_window = self.window
@@ -3870,9 +3901,14 @@ class SaveAnalyzer:
         title_label.pack(anchor="w", padx=20, pady=(15, 5))
         
         # 统计信息
-        stats_text = f"✓ {self.t('collected_endings') if not is_sticker else self.t('collected_stickers')}: {len(collected_list)}    "
-        if missing_list:
-            stats_text += f"⚠ {self.t('missing_endings') if not is_sticker else self.t('missing_stickers_count')}: {len(missing_list)}"
+        if is_ng_scene:
+            stats_text = f"✓ {self.t('ng_scene_count')}: {len(collected_list)}/{len(items)}    "
+            if missing_list:
+                stats_text += f"⚠ {self.t('missing_omakes')}: {len(missing_list)}"
+        else:
+            stats_text = f"✓ {self.t('collected_endings') if not is_sticker else self.t('collected_stickers')}: {len(collected_list)}    "
+            if missing_list:
+                stats_text += f"⚠ {self.t('missing_endings') if not is_sticker else self.t('missing_stickers_count')}: {len(missing_list)}"
         stats_label = tk.Label(header_frame, text=stats_text, font=font_hint,
                               bg=COLORS['header_bg'], fg=COLORS['hint_text'] if missing_list else COLORS['collected_title'])
         stats_label.pack(anchor="w", padx=20, pady=(0, 10))
@@ -3940,7 +3976,7 @@ class SaveAnalyzer:
                 title_color = COLORS['missing_title']
                 status_color = COLORS['missing_status']
                 text_color = COLORS['missing_text']
-                status_text = "❌ " + (self.t("status_missing_ending") if not is_sticker else self.t("status_missing_sticker"))
+                status_text = "❌ " + (self.t("status_missing_ending") if not is_sticker and not is_ng_scene else (self.t("status_missing_sticker") if is_sticker else self.t("status_missing_ending")))
             else:
                 card_color = COLORS['collected_card']
                 border_color = COLORS['collected_border']
@@ -3948,7 +3984,7 @@ class SaveAnalyzer:
                 title_color = COLORS['collected_title']
                 status_color = COLORS['collected_status']
                 text_color = COLORS['collected_text']
-                status_text = "✓ " + (self.t("status_collected_ending") if not is_sticker else self.t("status_collected_sticker"))
+                status_text = "✓ " + (self.t("status_collected_ending") if not is_sticker and not is_ng_scene else (self.t("status_collected_sticker") if is_sticker else self.t("status_collected_ending")))
             
             x1, y1 = 25, y
             x2, y2 = 25 + CARD_WIDTH, y + h
@@ -3983,13 +4019,47 @@ class SaveAnalyzer:
             canvas.create_line(x1 + CARD_PADDING, line_y, x2 - CARD_PADDING, line_y, 
                              fill=border_color, width=1)
             
-            # 绘制达成条件文本（多行）
+            # 绘制达成条件文本（多行）- 使用可选择的Text控件
             text_y = line_y + 12
-            for line in card['wrapped_lines']:
-                canvas.create_text(x1 + CARD_PADDING, text_y, 
-                                 text=line, font=font_card_text, 
-                                 fill=text_color, anchor="nw")
-                text_y += 18
+            text_height = len(card['wrapped_lines']) * 18
+            
+            # 创建Text控件用于文本选择
+            text_frame = tk.Frame(canvas, bg=card_color)
+            text_widget = tk.Text(
+                text_frame,
+                wrap=tk.NONE,  # 不自动换行，保持原有的换行
+                font=font_card_text,
+                fg=text_color,
+                bg=card_color,
+                relief=tk.FLAT,
+                borderwidth=0,
+                highlightthickness=0,
+                selectbackground='#4A90E2',  # 选中背景色
+                selectforeground='white',     # 选中文字颜色
+                cursor='ibeam',              # 文本光标
+                state=tk.NORMAL,
+                padx=0,
+                pady=0,
+                spacing1=0,  # 行前间距
+                spacing2=0,  # 行间间距
+                spacing3=0   # 行后间距
+            )
+            
+            # 插入文本内容
+            full_text = '\n'.join(card['wrapped_lines'])
+            text_widget.insert('1.0', full_text)
+            text_widget.config(state=tk.DISABLED)  # 设置为只读
+            
+            text_widget.pack(fill='both', expand=True)
+            
+            # 将Text控件窗口添加到Canvas上
+            canvas.create_window(
+                x1 + CARD_PADDING, text_y,
+                window=text_frame,
+                anchor='nw',
+                width=CARD_WIDTH - CARD_PADDING * 2,
+                height=text_height
+            )
         
         # 绑定鼠标滚轮
         def on_mousewheel(event):
@@ -4059,5 +4129,52 @@ class SaveAnalyzer:
             id_prefix="#",
             window_title_suffix="stickers",
             is_sticker=True
+        )
+    
+    def show_ng_scene_requirements(self, save_data):
+        """显示NG场景解锁条件窗口"""
+        ng_scene_list = save_data.get("ngScene", [])
+        collected_ng_scene_set = set(ng_scene_list)
+        
+        # 获取所有NG场景ID
+        all_ng_scene_ids = self.TOTAL_NG_SCENE
+        
+        # 准备数据 - 使用场景名称作为显示文本
+        items = []
+        for ng_scene_id in all_ng_scene_ids:
+            ng_scene_name_key = f"ng_scene_{ng_scene_id}"
+            ng_scene_name = self.t(ng_scene_name_key)
+            ng_scene_key = f"ng_scene_{ng_scene_id}_unlock_cond"
+            condition_text = self.t(ng_scene_key)
+            # 使用场景名称作为 item_id，这样标题会显示名称
+            items.append((ng_scene_name, condition_text))
+        
+        # 需要创建一个映射，将场景名称映射回原始ID，用于检查是否已收集
+        name_to_id_map = {}
+        for ng_scene_id in all_ng_scene_ids:
+            ng_scene_name_key = f"ng_scene_{ng_scene_id}"
+            ng_scene_name = self.t(ng_scene_name_key)
+            name_to_id_map[ng_scene_name] = ng_scene_id
+        
+        # 创建基于名称的已收集集合
+        collected_ng_scene_names_set = set()
+        for ng_scene_id in collected_ng_scene_set:
+            if ng_scene_id in name_to_id_map.values():
+                # 找到对应的名称
+                for name, scene_id in name_to_id_map.items():
+                    if scene_id == ng_scene_id:
+                        collected_ng_scene_names_set.add(name)
+                        break
+        
+        # 调用通用方法
+        self._show_requirements_canvas(
+            title_key="omakes_statistics",
+            hint_key="ng_scene_count",
+            items=items,
+            collected_set=collected_ng_scene_names_set,
+            id_prefix="",
+            window_title_suffix="ng_scenes",
+            is_sticker=False,
+            is_ng_scene=True
         )
 

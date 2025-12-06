@@ -47,14 +47,14 @@ class Colors:
     DARK_GRAY = "#d0d0d0"
     
     # 预览区域背景
-    PREVIEW_BG = "#d3d3d3"  # lightgray
+    PREVIEW_BG = "#d3d3d3"  
     
     # 文字颜色
     TEXT_PRIMARY = "#333333"
     TEXT_SECONDARY = "#666666"
     TEXT_DISABLED = "#999999"
-    TEXT_HINT = "#D554BC"  # 提示文字
-    TEXT_SUCCESS = "#6DB8AC"  # 成功文字
+    TEXT_HINT = "#D554BC"  
+    TEXT_SUCCESS = "#6DB8AC"  
     
     # 强调色
     ACCENT_PINK = "#D554BC"
@@ -75,7 +75,6 @@ _STYLES_INITIALIZED = False
 def init_styles(root=None):
     """
     初始化应用样式
-    解决文字底色问题：创建多个样式变体以适应不同背景色
     
     Args:
         root: 可选的根窗口，用于获取 ttk.Style
@@ -115,7 +114,6 @@ def init_styles(root=None):
              background=[("active", Colors.PREVIEW_BG), ("!active", Colors.PREVIEW_BG)])
     
     # 透明/继承背景的 Label（不设置背景色，让其继承父容器）
-    # 注意：ttk.Label 不支持真正的透明，但可以尝试不设置背景
     style.configure("Transparent.TLabel",
                    borderwidth=0,
                    relief="flat")
@@ -209,7 +207,6 @@ def get_parent_bg(widget):
 def create_label_with_auto_bg(parent, text, font=None, fg=None, **kwargs):
     """
     创建一个自动继承父容器背景色的 Label
-    使用 tk.Label 而非 ttk.Label，因为 tk.Label 更容易控制背景色
     
     Args:
         parent: 父容器
@@ -354,16 +351,14 @@ class ThrottledUpdater:
 
 
 # =====================================================
-# 缓动函数
+# 一些缓动函数
 # =====================================================
 
 def ease_out_cubic(t):
-    """Cubic ease-out 缓动函数"""
     return 1 - pow(1 - t, 3)
 
 
 def ease_in_out_cubic(t):
-    """Cubic ease-in-out 缓动函数"""
     if t < 0.5:
         return 4 * t * t * t
     else:
@@ -371,6 +366,5 @@ def ease_in_out_cubic(t):
 
 
 def ease_out_quad(t):
-    """Quadratic ease-out 缓动函数"""
     return 1 - (1 - t) * (1 - t)
 
